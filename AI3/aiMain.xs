@@ -281,7 +281,7 @@ mutable int initUnitPicker(string name="BUG", int numberTypes=1, int minUnits=10
 mutable void updateForecasts(void) {}
 mutable void setUnitPickerPreference(int upID=-1) {}
 mutable void endDefenseReflex(void) {}
-
+mutable float getlocHP(vector loc = cInvalidVector,float radius=20.0,int relation=cPlayerRelationEnemyNotGaia,int Type=cUnitTypeLogicalTypeLandMilitary){return(0);}
    
 //==============================================================================
 // Global Arrays
@@ -336,6 +336,51 @@ extern bool cvIsNormal = true; // Set to false in this is the player's handicap 
 float weightWood=0.333;
 float weightFood=0.333;
 float weightGold=0.333;
+
+int arrEngaged=-1;
+int arrEngagedTarget=-1;
+int arrEngagedAux=-1;
+int nEngaged=0;
+
+void engageUnit(int unit=-444, int targetID=-1, float auxilary=0){
+	xsArraySetInt(arrEngaged,nEngaged,unit);
+	xsArraySetInt(arrEngagedTarget,nEngaged,targetID);
+	xsArraySetFloat(arrEngagedAux,nEngaged,auxilary);
+	nEngaged=nEngaged+1;
+}
+
+void updateAux(int i=-1, float auxilary=-1){
+	xsArraySetFloat(arrEngagedAux,i,auxilary);
+}
+
+float getAux(int i=-1){
+	return (xsArrayGetFloat(arrEngagedAux,i));
+}
+
+void dengage(int i=-1){
+	xsArraySetInt(arrEngaged,i,xsArrayGetInt(arrEngaged,nEngaged));
+	xsArraySetInt(arrEngagedTarget,i,xsArrayGetInt(arrEngagedTarget,nEngaged));
+	xsArraySetFloat(arrEngagedAux,i,xsArrayGetFloat(arrEngagedAux,nEngaged));
+	nEngaged=nEngaged-1;
+}
+
+
+float getRelativeVillagerHP(int enemyID=-1){
+	float tmpHP=kbUnitGetCurrentHitpoints(enemyID);
+	if (tmpHP<50) tmpHP=50;
+	int age=kbGetAgeForPlayer(kbUnitGetPlayerID(enemyID));
+	if (kbUnitIsType(enemyID,cUnitTypeExplorer)) 
+		tmpHP=tmpHP*(0.3+age*0.2);
+	if (kbUnitIsType(enemyID,cUnitTypeCannotConvertHill))
+		tmpHP=tmpHP*(0.5+age*0.1);
+	if (kbUnitIsType(enemyID,cUnitTypeAbstractPet))
+		tmpHP=tmpHP*(0.3+age*0.1);
+	if (kbUnitIsType(enemyID,cUnitTypeAbstractHandCavalry))
+		tmpHP=tmpHP*(1.5+age*0.2);
+	else
+		tmpHP=tmpHP;
+	return(tmpHP);
+}
 
 //==============================================================================
 /* initArrays()
@@ -1165,6 +1210,44 @@ int getUnit(int unitTypeID=-1, int playerRelationOrID=cMyID, int state=cUnitStat
    return(-1);
 }
 
+int getUnitN(int unitTypeID=-1,int N=0, int playerRelationOrID=cMyID, int state=cUnitStateAlive)
+{
+   int count=-1;
+   static int unitQueryID=-1;
+
+   //If we don't have the query yet, create one.
+   if (unitQueryID < 0)
+   {
+      unitQueryID=kbUnitQueryCreate("miscGetUnitQueryN");
+      kbUnitQuerySetIgnoreKnockedOutUnits(unitQueryID, true);
+   }
+
+	//Define a query to get all matching units
+	if (unitQueryID != -1)
+	{
+      if (playerRelationOrID > 1000)      // Too big for player ID number
+      {
+      	kbUnitQuerySetPlayerID(unitQueryID, -1);  // Clear the player ID, so playerRelation takes precedence.
+         kbUnitQuerySetPlayerRelation(unitQueryID, playerRelationOrID);
+      }
+      else
+      {
+         kbUnitQuerySetPlayerRelation(unitQueryID, -1);
+      	kbUnitQuerySetPlayerID(unitQueryID, playerRelationOrID);
+      }
+      kbUnitQuerySetUnitType(unitQueryID, unitTypeID);
+      kbUnitQuerySetState(unitQueryID, state);
+	}
+	else
+   	return(-1);
+
+   kbUnitQueryResetResults(unitQueryID);
+	int numberFound=kbUnitQueryExecute(unitQueryID);
+   if (numberFound > 0)
+      return(kbUnitQueryGetResult(unitQueryID, N));   // Return a random dude(tte)
+   return(-1);
+}
+
 //==============================================================================
 // createSimpleAttackGoal
 //==============================================================================
@@ -1282,6 +1365,51 @@ int getUnitByLocation(int unitTypeID=-1, int playerRelationOrID=cMyID, int state
    return(-1);
 }
 
+int getWorkItem(int playerRelationOrID=-1, int Type=-1, vector location = cInvalidVector, float radius = 20.0, int worker=5, int state=cUnitStateAlive)
+{
+   static int unitQueryID=-1;
+
+   //If we don't have the query yet, create one.
+   if (unitQueryID < 0)
+   {
+      unitQueryID=kbUnitQueryCreate("miscGetUnitLocationAscendQuery");
+      kbUnitQuerySetIgnoreKnockedOutUnits(unitQueryID, true);
+   }
+
+	//Define a query to get all matching units
+	if (unitQueryID != -1)
+	{
+      if (playerRelationOrID > 1000)      // Too big for player ID number
+      {
+      	kbUnitQuerySetPlayerID(unitQueryID, -1);
+         kbUnitQuerySetPlayerRelation(unitQueryID, playerRelationOrID);
+      }
+      else
+      {
+         kbUnitQuerySetPlayerRelation(unitQueryID, -1);
+      	kbUnitQuerySetPlayerID(unitQueryID, playerRelationOrID);
+      }
+      kbUnitQuerySetUnitType(unitQueryID, Type);
+      kbUnitQuerySetState(unitQueryID, state);
+      kbUnitQuerySetPosition(unitQueryID, location);
+      kbUnitQuerySetMaximumDistance(unitQueryID, radius);
+	  kbUnitQuerySetAscendingSort(unitQueryID,true);
+	}
+	else
+   	return(-1);
+
+   kbUnitQueryResetResults(unitQueryID);
+	int numberFound=kbUnitQueryExecute(unitQueryID);
+   if (numberFound > 0){
+	int i=0;
+	for(i=0;<numberFound){
+		int tmp=kbUnitQueryGetResult(unitQueryID, i);
+		if (kbUnitGetNumberWorkers(tmp)<worker && kbGetUnitBaseTypeID(tmp)>0)
+			return(tmp);   
+	  }
+	 }
+   return(-1);
+}
 
 int getClosestUnitByLocation(int unitTypeID=-1, int playerRelationOrID=cMyID, int state=cUnitStateAlive, vector location = cInvalidVector)
 {
@@ -1311,28 +1439,57 @@ int getClosestUnitByLocation(int unitTypeID=-1, int playerRelationOrID=cMyID, in
       kbUnitQuerySetUnitType(unitQueryID, unitTypeID);
       kbUnitQuerySetState(unitQueryID, state);
       kbUnitQuerySetPosition(unitQueryID, location);
+	  kbUnitQuerySetAscendingSort(unitQueryID,true);
       //kbUnitQuerySetMaximumDistance(unitQueryID, radius);
 	}
 	else
    	return(-1);
 
-   kbUnitQueryResetResults(unitQueryID);
+    kbUnitQueryResetResults(unitQueryID);
 	int numberFound=kbUnitQueryExecute(unitQueryID);
-	int index=0;
-	int tmpR=-1;
-	float minDist=9999.9;
-	float tmpDist=0.0;
-	int retVal=-1;
-	for(index=0; <numberFound){
-		tmpR=kbUnitQueryGetResult(unitQueryID, index);
-		tmpDist=distance(kbUnitGetPosition(tmpR),location);
-		if (tmpDist<minDist){
-			minDist=tmpDist;
-			retVal=tmpR;
-		}
-	}
+	if (numberFound>0)
+		return (kbUnitQueryGetResult(unitQueryID, 0));
 	
-	return (retVal);
+	return (-1);
+}
+
+
+
+vector getFleeVec(vector location = cInvalidVector, float radius=20.0)
+{
+   int count=-1;
+   static int unitQueryID=-1;
+
+   //If we don't have the query yet, create one.
+   if (unitQueryID < 0)
+   {
+      unitQueryID=kbUnitQueryCreate("miscGetUnitLocationQuery");
+      kbUnitQuerySetIgnoreKnockedOutUnits(unitQueryID, true);
+   }
+
+	kbUnitQuerySetPlayerID(unitQueryID, -1);
+	kbUnitQuerySetPlayerRelation(unitQueryID, cPlayerRelationEnemyNotGaia);
+    kbUnitQuerySetUnitType(unitQueryID, cUnitTypeLogicalTypeLandMilitary);
+    kbUnitQuerySetState(unitQueryID, cUnitStateAlive);
+    kbUnitQuerySetPosition(unitQueryID, location);
+	kbUnitQuerySetAscendingSort(unitQueryID,true);
+    kbUnitQuerySetMaximumDistance(unitQueryID, radius);
+
+    kbUnitQueryResetResults(unitQueryID);
+	int numberFound=kbUnitQueryExecute(unitQueryID);
+	int i=0;
+	if (numberFound==0) {
+		//echoMessage("Flee? Really?");
+		return (aiRandLocation());
+	}
+	vector sum=cOriginVector;
+	for(i=0; <numberFound){
+		int eID=(kbUnitQueryGetResult(unitQueryID, 0));
+		sum=sum+(kbUnitGetPosition(eID)-location);
+	}
+	vector vec=location-xsVectorNormalize(sum/numberFound)*20;
+	//echoMessage("FleeVec:"+vec);
+	return (vec);
 }
 
 
@@ -1377,8 +1534,6 @@ int getUnitCountByLocation(int unitTypeID=-1, int playerRelationOrID=cMyID, int 
    kbUnitQueryResetResults(unitQueryID);
 	return(kbUnitQueryExecute(unitQueryID));
 }
-
-
 
 
 //==============================================================================
@@ -1962,7 +2117,7 @@ int createSimpleBuildPlan(int puid=-1, int number=1, int pri=100, bool economy=t
 {
    if (cvOkToBuild == false)
       return(-1);
-
+	//echoMessage("Build "+kbGetUnitTypeName(puid));
    int builderType = gEconUnit;
    //Create the right number of plans.
    for (i=0; < number)
@@ -1994,7 +2149,7 @@ int createSimpleBuildPlan(int puid=-1, int number=1, int pri=100, bool economy=t
       //Escrow.
       aiPlanSetEscrowID(planID, escrowID);
       //Builders.
-      if (civIsAsian() == true) 
+      if (false)//civIsAsian() == true) 
       {/*
         if (puid  == gFarmUnit)
         {
@@ -2018,7 +2173,7 @@ int createSimpleBuildPlan(int puid=-1, int number=1, int pri=100, bool economy=t
         }
         if (puid  == cUnitTypeypBerryBuilding) 
         {
-            builderType = cUnitTypeYPBerryWagon1;
+            builderType = cUnitTypeYPBerryWagon1; //wtf...
         }
         if (puid  == cUnitTypeTradingPost) 
         {
@@ -2089,6 +2244,7 @@ int createLocationBuildPlan(int puid=-1, int number=1, int pri=100, bool economy
    if (cvOkToBuild == false)
       return(-1);
    //Create the right number of plans.
+	//echoMessage("Loc Build "+kbGetUnitTypeName(puid));
    for (i=0; < number)
    {
       int planID=aiPlanCreate("Location Build Plan, "+number+" "+kbGetUnitTypeName(puid), cPlanBuild);
@@ -2163,7 +2319,7 @@ int createMainBase(vector mainVec=cInvalidVector)
       kbUnitQuerySetUnitType(unitQueryID, cUnitTypeBuilding);
       kbUnitQuerySetState(unitQueryID, cUnitStateABQ);
       kbUnitQuerySetPosition(unitQueryID, mainVec);      // Checking new base vector
-      kbUnitQuerySetMaximumDistance(unitQueryID, 60.0);
+      kbUnitQuerySetMaximumDistance(unitQueryID, 100.0);
 	}
    
    kbUnitQueryResetResults(unitQueryID);
@@ -2195,7 +2351,7 @@ int createMainBase(vector mainVec=cInvalidVector)
    }
 
 
-   int newBaseID=kbBaseCreate(cMyID, "Base"+kbBaseGetNextID(), mainVec, 60.0);
+   int newBaseID=kbBaseCreate(cMyID, "Base"+kbBaseGetNextID(), mainVec, 100.0);
    aiEcho("New main base ID is "+newBaseID);
    if (newBaseID > -1)
    {
@@ -2294,6 +2450,7 @@ int getEnemyCount()
    arraySort(source, target) will assign target[0] the value of 17, and 
    source[target[0]] will be 91.
 
+   WTF? Insertion Sort? Why not QSORT!!!!!
 */
 //==============================================================================
 bool arraySortFloat(int sourceArray=-1, int targetArray=-1)
@@ -3995,7 +4152,7 @@ void updateEscrows(void)
    kbEscrowSetPercentage(cEconomyEscrowID, cResourceGold, econPercent);
    kbEscrowSetPercentage(cEconomyEscrowID, cResourceFame, 0.0);
    kbEscrowSetPercentage(cEconomyEscrowID, cResourceSkillPoints, 0.0);
-   kbEscrowSetCap(cEconomyEscrowID, cResourceFood, 1000);    // Save for age upgrades
+   kbEscrowSetCap(cEconomyEscrowID, cResourceFood, 1200);    // Save for age upgrades
    kbEscrowSetCap(cEconomyEscrowID, cResourceWood, 500);
    if (kbGetAge() >= cAge3)
       kbEscrowSetCap(cEconomyEscrowID, cResourceWood, 800); // Needed for mills, plantations
@@ -4043,10 +4200,6 @@ void selectRicePaddyTactics(void){
       return;
    }
    
-   // Use rice paddy wagons
-   if (kbUnitCount(cMyID, cUnitTypeYPRicePaddyWagon, cUnitStateAlive) > 0) 
-   {  createSimpleBuildPlan(cUnitTypeYPRicePaddyWagon, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  }
-
    //gotta get all of the paddies
    static int paddyQueryID=-1;
    
@@ -4099,27 +4252,24 @@ void selectRicePaddyTactics(void){
 //==============================================================================
 // updateGatherers
 /*
-   Given the desired allocation of gatherers, set the desired number
-   of gatherers for each active econ base, and the breakdown between
-   resources for each base.
+Full control of villagers.
 */
 //==============================================================================
 void updateGatherers(void)
-{
-    int villagerID=-1;
-	int idler=0;
-	int nReassignment=0;
-	int totalVillagers=kbUnitCount(cMyID, cUnitTypeAbstractVillager, cUnitStateAlive);
+{	
+	//An Optimal Gatherer assignment is a weighted min-flow problem, and it's troublesome to implement in xs style... so approximate algorithm implemented, that is:
+	//from most needed res, for each idle gatherer calculate min distance to target resource, then pick the gatherer having min distance, assign the task, until no available gatherer. if assignment is very unbalanced, choose a 
+	
+	int totalVillagers=kbUnitCount(cMyID, cUnitTypeAbstractVillager, cUnitStateAlive)-kbUnitCount(cMyID,cUnitTypeAbstractFishingBoat,cUnitStateAlive);
 	int nGold=weightGold*totalVillagers;
 	int nFood=weightFood*totalVillagers;
 	int nWood=weightWood*totalVillagers;
-	int resID=-1;
-	vector vecVillager=cInvalidVector;
+	int nCrate=0;
 	
 	//Find Villagers:
 	static int unitQueryID=-1;	//If we don't have the query yet, create one.
 	if (unitQueryID < 0){
-		unitQueryID=kbUnitQueryCreate("miscGetUnitQuery");
+		unitQueryID=kbUnitQueryCreate("gathererUpdaterQuery");
 		kbUnitQuerySetIgnoreKnockedOutUnits(unitQueryID, true);
 	}
 	if (unitQueryID!=-1){
@@ -4130,281 +4280,465 @@ void updateGatherers(void)
 	}
 	kbUnitQueryResetResults(unitQueryID);
 	int vFound=kbUnitQueryExecute(unitQueryID);
-	
-	//xsDisableSelf();
-	
-	int index=0;
-	int status=-1;
-	int determinRes=-1;
-	float danger=999;
-	int tmpI=0;
-	vector vecRes=cInvalidVector;
-	vector vecTmp=cInvalidVector;
-	float maxScore=-1;
-	float tmpDanger=0;
-	float factor=0.04;//Convert distance into "enemy count".
-	
-	
+		
+	//tmp is debug string.
 	string tmp="";
+	//tmp="("+nFood+"/"+nWood+"/"+nGold+" -> ";
 	
-	//tmp=nFood+"/"+nWood+"/"+nGold+" -> ";
 	
+	//See how many gatherer is working:
+    int villagerID=-1;
 	for(index=0;<vFound){
 		villagerID=kbUnitQueryGetResult(unitQueryID,index);
 		//status=kbUnitGetActionType(villagerID);
 		if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeFood)) 	nFood=nFood-1;
 		if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeWood)) nWood=nWood-1;
 		if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeGold)) nGold=nGold-1;
+		if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeAbstractResourceCrate))
+			nCrate=nCrate+1;
+			
+			/*
+		if (kbUnitGetActionType(villagerID)==-1)
+			aiTaskUnitWork(getUnit(cUnitTypeTownCenter),villagerID);
+			*/
+		//What? You want 5 villagers to go and build just a TP? 
+		//What? you want all villagers get inside the TC while there is only ONE enemy?! disabled by diable townbell function... so human players wont get this too...
+		//let's just kill it.
+		int planID=kbUnitGetPlanID(villagerID);
+		if (planID>=0 && aiPlanGetNumberUnits(planID,gEconUnit)>1){
+			//aiPlanDestroy(planID);//just don't do that...
+			//aiTaskUnitMove(villagerID,kbUnitGetPosition(villagerID));//emergency stop!
+			//aiPlanSetActive(planID,false);
+			//tmp=tmp+planID+aiPlanGetName(planID)+">>"+aiPlanGetType(planID)+":"+aiPlanGetNumberUnits(planID,gEconUnit)+" "+aiPlanGetState(planID)+"\n";
+			//aiPlanAddUnitType(planID,gEconUnit,0,0,1);
+			//aiPlanAddUnitType(planID,gExplorerUnit,1,1,1);
+			//aiTaskMove(
+			//aiPlanSetActive(planID,true);
+		}
+		
+		//int i=cPlanRepair;
 		//tmp=tmp+kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeFood)+",";
 	}
-	//tmp=tmp+"|"+nFood+"/"+nWood+"/"+nGold+" -> ";
 	
-	//Check for Reassignment.
-	bool compensated=true;
-	int compensater=cUnitTypeFood;
+	//Check for Reassignment, including engage.
+	int compensated=0;
 	int max=nFood;
 	if (nWood>max) max=nWood;
 	if (nGold>max) max=nGold;
 	int min=nFood;
 	if (nWood<min) min=nWood;
 	if (nGold<min) min=nGold;
-	if (max-min>5){
-		if (max-nFood>totalVillagers*0.3) {compensated=false;compensater=cUnitTypeFood;}
-		if (max-nWood>totalVillagers*0.3) {compensated=false;compensater=cUnitTypeWood;}
-		if (max-nGold>totalVillagers*0.3) {compensated=false;compensater=cUnitTypeGold;}
+	if (max-min>((kbGetAge()*kbGetAge())*0.5+kbGetAge()*1.7+3))
+		compensated=kbGetAge()+1;
+	
+	//tmp=tmp+"|"+nFood+"/"+nWood+"/"+nGold+"/"+nCrate+")"+compensated+" => ";
+	
+	static int arrID=-1;
+	static int arrDist=-1;
+	static int arrResID=-1;
+	static int arrAssigned=-1;
+	static int arrDebug=-1;
+	if (arrID==-1) {
+		arrID=xsArrayCreateInt(100,0,"arrVillagerID");
+		arrDist=xsArrayCreateFloat(100,0,"arrVillagerResDist");
+		arrResID=xsArrayCreateInt(100,0,"arrVillagerResID");
+		arrAssigned=xsArrayCreateInt(100,0,"arrVillagerAssigned");
+		arrDebug=xsArrayCreateInt(100,0,"arrVillagerDebug");
 	}
 	
-	int noLogging=0;
-	int noMining=0;
-	int nTrees=0;
+	int resID=-1;
+	int nAvail=0;
+	int nAssigned=0;
+	bool notokFood=false;
+	bool notokWood=false;
+	bool notokGold=false;
 	int bestWood=-1;
 	int bestGold=-1;
 	int bestFood=-1;
-	float WoodDanger=999;
-	float GoldDanger=999;
-	float FoodDanger=999;
-	int enemyCount=-1;
-	float hResAmnt=0;
-	vector safePlace=cInvalidVector;
+	float WoodDist=999;
+	float GoldDist=999;
+	float FoodDist=999;
+	int debugItem=0;
+	int status=0;
 	
-	//assignement start!:
-    for(index=0;<vFound){
+	vector vecRes=cInvalidVector;
+	vector vecVillager=cInvalidVector;
+	
+	
+	float tmpDist=0;
+	
+	//micro operation to avoid enemy contact, or engage a micro combat.
+	for(index=0;<vFound){
 		villagerID=kbUnitQueryGetResult(unitQueryID,index);
-		status=kbUnitGetActionType(villagerID);
 		if (kbUnitIsType(villagerID,cUnitTypeAbstractFishingBoat))
 			continue; //not settler...
+			
+		int iTmp=0;
+		//init:
 		vecVillager=kbUnitGetPosition(villagerID);
+		status=kbUnitGetActionType(villagerID);
+		if (status==0) continue;
+		if (status==9){ //Dont't bother if we have a plan... damn.
+			if (kbUnitGetPlanID(villagerID)>0) continue;
+		}
 		
-		tmp=tmp+"|"+status;
+		bool isEngaged=false;
+		for(iTmp=0;<nEngaged){
+			if (xsArrayGetInt(arrEngaged,iTmp)==villagerID){
+				xsArraySetInt(arrAssigned,nAssigned,villagerID);
+				nAssigned=nAssigned+1;
+				isEngaged=true;
+				break;
+			}
+		}
+		if (isEngaged) continue;
+		//evaluate from:
+		//if enemy is attacking us
+		//if i'm close to ally military
+		//the strength ratio nearby
+		//Goal is to keep working + kill enemy + stay alive
+		//Take actions:
+		//Run away
+		//Engage
+		//Ignore
+		int nAttacker=kbUnitGetNumberWorkers(villagerID);
+		float enemyHPatt=0;
+		float myHP=kbUnitGetCurrentHitpoints(villagerID);
+		int nearestAttacker=-1;
+		float AttackerDist=999;
+		int enemyID=-1;
+		int decideTarget=-1;
+		for(iTmp=0;<nAttacker){
+		//to do: implement as a function...
+			enemyID=kbUnitGetWorkerID(villagerID,iTmp);
+			enemyHPatt=enemyHPatt+getRelativeVillagerHP(enemyID);
+			tmpDist=distance(vecVillager,kbUnitGetPosition(enemyID));
+			if (tmpDist<AttackerDist){ AttackerDist=tmpDist; nearestAttacker=enemyID;}
+		}
+		float allyHPtot=getlocHP(vecVillager,26,cPlayerRelationAlly);
+		float enemyHPtot=getlocHP(vecVillager,26);
+		float settlerHPtot=getlocHP(vecVillager,26,cPlayerRelationAlly,gEconUnit);//Just in range that settler can come and help.
 		
-		if (status==0) 
-			continue; //Builder and Attacker doesn't stop!
-		
-		enemyCount=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecVillager, 25.0)-getUnitCountByLocation(cUnitTypeLogicalTypeScout, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecVillager, 25.0)-getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationAlly, cUnitStateAlive, vecVillager, 25.0)+getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecVillager, 13.0)-getUnitCountByLocation(cUnitTypeLogicalTypeScout, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecVillager, 13.0);
-		
-		if (status==9 && enemyCount<=0)
-			continue;
-		
-		if (status!=7 && compensated==true && enemyCount<=0)
-			continue;
-		
-		
-		compensated=true;
-		
-		tmp=tmp+"*";
-		//Assign Villager
-		
-		if (enemyCount>=1){
-			//Not Safe!
-			//first set vecVillager backing up.
-			vecTmp=kbUnitGetPosition(getClosestUnitByLocation(cUnitTypeLogicalTypeLandMilitary,cPlayerRelationEnemyNotGaia,cUnitStateAlive,vecVillager));
-			
-			//safePlace
-			
-			if (distance(vecTmp,vecVillager)<3){
-				vecVillager=kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID));
-				
-			}else{
-			//reset vecVillager to somewhere nearest having ally army.
-				vecVillager=vecVillager-(vecTmp-vecVillager)*25.0/distance(vecTmp-vecVillager);
-				
-			//I used redefined vars.....- -|||
-				tmpI=getClosestUnitByLocation(cUnitTypeLogicalTypeLandMilitary,cPlayerRelationAlly,cUnitStateAlive,vecVillager);
-				vecRes=kbUnitGetPosition(tmpI);
-				danger=distance(vecVillager,vecRes);
-				
-				
-				tmpI=getClosestUnitByLocation(cUnitTypeLogicalTypeLandMilitary,cMyID,cUnitStateAlive,vecVillager);
-				if (distance(vecVillager,kbUnitGetPosition(tmpI))<danger){
-					vecRes=kbUnitGetPosition(tmpI);
-					danger=distance(vecVillager,vecRes);
+		int flag=0; //Ignore
+		if (enemyHPtot>0)
+			tmp=tmp+allyHPtot+","+settlerHPtot+","+enemyHPatt+","+enemyHPtot;
+		if (nAttacker>=3 && enemyHPatt>myHP){
+			tmp=tmp+"Suffer";
+			flag=1;//run away
+		}
+		if (enemyHPtot>allyHPtot && enemyHPtot>250){
+			if (enemyHPtot>settlerHPtot+allyHPtot) {
+				tmp=tmp+"Outrun";
+				flag=1;
+			}
+			else {
+				if (enemyHPtot<settlerHPtot*2.3){
+					tmp=tmp+"CanWin";
+					flag=2; //engage.
 				}
+				else{
+					tmp=tmp+"MayHurt";
+					flag=1;
+				}
+			}
+		}else
+		if (nAttacker>0 && enemyHPatt<myHP) {
+			tmp=tmp+"FightB";
+			decideTarget=enemyID;
+			flag=2;
+		}
+		for(iTmp=0;<nEngaged){
+			enemyID=xsArrayGetInt(arrEngagedTarget,iTmp);
+			if (distance(kbUnitGetPosition(enemyID),vecVillager)<24 &&
+				getRelativeVillagerHP(enemyID)<myHP+100){
+				flag=2;
+				decideTarget=enemyID;
+				break;
+			}
+		}
+		
+		if (flag==2){//Engage:
+			if (decideTarget==-1)
+				decideTarget=getClosestUnitByLocation(cUnitTypeLogicalTypeLandMilitary,cPlayerRelationEnemyNotGaia,cUnitStateAlive,vecVillager);
+			aiTaskUnitWork(villagerID,decideTarget);
+			engageUnit(villagerID,decideTarget,xsGetTime());
+			tmp=tmp+",E"+decideTarget+":"+kbGetUnitTypeName(kbGetUnitBaseTypeID(decideTarget))+"@"+nEngaged+"\n";
+		} else if (flag==1){//Run away
+			tmp=tmp+",Flee!\n";
+			aiTaskUnitMove(villagerID, getFleeVec(vecVillager,26));
+		} else {
+			if (enemyHPtot>0)
+				tmp=tmp+",ignore\n";
+			continue;//Ignore..
+		}
+		xsArraySetInt(arrAssigned,nAssigned,villagerID);
+		nAssigned=nAssigned+1;
+	}
+	
+	
+	static int openCrateTime=-999999;
+	static int opener=-1;
+	//tmp="AT:"+nAssigned+",";
+	//Then, assign task.
+	int loop=0;
+	for(loop=0;<vFound){
+		nAvail=0;
+		for(index=0;<vFound) {
+			villagerID=kbUnitQueryGetResult(unitQueryID,index);
+			if (kbUnitIsType(villagerID,cUnitTypeAbstractFishingBoat))
+				continue; //not settler...
+			
+			//init:
+			status=-1;
+			vecVillager=kbUnitGetPosition(villagerID);
+			status=kbUnitGetActionType(villagerID);
+			
+			//If has assigned task, go away.
+			int tmpI=0; bool quit=false;
+			for(tmpI=0;<nAssigned)
+				if (xsArrayGetInt(arrAssigned,tmpI)==villagerID){
+					quit=true;
+					break;
+				}
+			if (quit) continue;
+			
+			//if busy building
+			if (status==0) continue;
+			if (status==9){ //Dont't bother building plans...
+				if (kbUnitGetPlanID(villagerID)>0) continue;
+				//Also don't bother who is just assigned to gather crate:
+				if (openCrateTime+20000>xsGetTime() && opener==villagerID)
+					continue;
+			}
+			
+			//Get Position
+			int nearBase=kbFindClosestBase(cMyID, vecVillager);
+			vector nearBaseVec = kbBaseGetLocation(cMyID, nearBase);
+			
+			if (nearBase!=-1 && distance(vecVillager,nearBaseVec)>75+kbGetAge()*10 && getlocHP(nearBaseVec,60)>kbUnitGetCurrentHitpoints(villagerID))
+				vecVillager=nearBaseVec; //Too far, go home and be safer!
 				
-				if (distance(vecVillager,kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID)))<danger)
-					vecRes=kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID));
-									
-				if (getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary,cPlayerRelationEnemyNotGaia,cUnitStateAlive,vecRes,20)<3)
-					vecVillager=vecRes*0.5+vecVillager*0.5;
-			}
-		}
-		
-		//what to assign?:
-		
-		idler=idler+1;
-		
-		static int assigned=0;
-		if (civIsNative()==true && assigned<kbGetAge()+1 && kbUnitCount(cMyID, cUnitTypeFirePit, cUnitStateAlive)>0){//Dance, just assign one each age
-			assigned=kbGetAge()+1;
-			aiTaskUnitWork(villagerID,getUnit(cUnitTypeFirePit,cMyID,cUnitStateAlive));
-		}
-		
-		//Crate Opening...
-		resID=getUnitByLocation(cUnitTypeAbstractResourceCrate,cPlayerRelationAny,cUnitStateAlive,vecVillager,30);
-		vecRes=kbUnitGetPosition(resID);
-		if (resID>0 && enemyCount<3){
-			aiTaskUnitWork(villagerID,resID);
-			tmp=tmp+"%"+resID;
-			continue;
-		}
-		
-		//fill nWood, nFood, nGold, from most needed to least needed.
-		//find a place safe to gather.
-		if (true){//Wood is very easily outrun...and non replenishable.
-			noLogging=0;
-			danger=999;
-			determinRes=-1;
-			
-			//loop around trees...
-			nTrees=getUnitCountByLocation(cUnitTypeTree,cPlayerRelationAny,cUnitStateAny,vecVillager,50);
-			for(tmpI=0;<nTrees){
-				resID=getUnitByLocation(cUnitTypeTree,cPlayerRelationAny,cUnitStateAny,vecVillager,50,tmpI);
-				vecRes=kbUnitGetPosition(resID);
-				tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-				if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<6){ determinRes=resID; danger=tmpDanger;}
-			}
-			
-			if (danger<5 && nWood>=nGold && nWood>=nFood){
-				aiTaskUnitWork(villagerID,determinRes);
-				nWood=nWood-1;
+			//Check Crate first of all, crate always have highest priority. however only one gatherer will be ok(at most kbgetage())
+			//There might be some bug in age3y.exe for crate.... patch required...
+			resID=getWorkItem(cPlayerRelationAny,cUnitTypeAbstractResourceCrate,vecVillager,30,1,cUnitStateAlive);
+			if (resID!=-1
+				//&& kbGetUnitBaseTypeID(resID)!=-1 //Patch: if cannot get basetype, then pass.
+				&& nCrate<=kbGetAge()
+				&& (xsGetTime()-20000>openCrateTime) //Patch: since i cannot know how many crate openers are assigned right now... i can delay the assignment...
+				&& status!=0 && status!=9 
+				//&& kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeAbstractResourceCrate)==false
+				) {
+				xsArraySetInt(arrID,nAvail,villagerID);
+				xsArraySetInt(arrResID,nAvail,resID);
+				xsArraySetFloat(arrDist,nAvail,distance(vecVillager,kbUnitGetPosition(resID)));
+				
+				debugItem=0;
+				xsArraySetInt(arrDebug,nAvail,debugItem);
+				
+				nAvail=nAvail+1;
 				continue;
 			}
-			noLogging=1;
-			bestWood=determinRes;
-			WoodDanger=danger;
-		}
-		
-		if (true){ //if true, wtf lol this section check for gold cutting.
-			noMining=0;
-			danger=999;
-			determinRes=-1;
 			
-			resID=getClosestUnitByLocation(cUnitTypeMinedResource,cPlayerRelationAny,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor*0.4;
-			if (tmpDanger<danger){ determinRes=resID; danger=tmpDanger;}
+			//If compensated and busy, go away
+			if (compensated<=0 && status!=7 || kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeAbstractResourceCrate)==true) continue;
 			
-			//MyPlantation
-			resID=getClosestUnitByLocation(gPlantationUnit,cMyID,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<10){ determinRes=resID; danger=tmpDanger;}
-			
-			//Allies
-			resID=getClosestUnitByLocation(cUnitTypeGold,cPlayerRelationAlly,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<10){ determinRes=resID; danger=tmpDanger;}
-			
-			if (determinRes!=-1 && (nGold>=nWood||noLogging==1) && nGold>=nFood && danger<3){
-				aiTaskUnitWork(villagerID,determinRes);
-				nGold=nGold-1;
+			//If cannot compensate, go away
+			if (status!=7){
+				if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeFood) && nFood>0) 
+				continue;
+				if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeWood) && nWood>0)
+				continue;
+				if (kbUnitIsType(kbUnitGetTargetUnitID(villagerID),cUnitTypeGold) && nGold>0)
 				continue;
 			}
-				
-			bestGold=determinRes;
-			GoldDanger=danger;
-			noMining=1;
-			//nothing to do?..... continue...
-		}
-		
-		if (true){ //Food
-			danger=999;
-			determinRes=-1;
+						
+			//then the normal resources.
+			notokFood=false; 
+			notokWood=false;
+			notokGold=false;
+			bestWood=-1;
+			bestGold=-1;
+			bestFood=-1;
+			WoodDist=999;
+			GoldDist=999;
+			FoodDist=999;
 			
+			
+			//Check Wood:
+			resID=getWorkItem(cPlayerRelationAny,cUnitTypeTree,vecVillager,80+kbGetAge()*10,7,cUnitStateAny);
+			if (nWood>=nGold && nWood>=nFood && resID>0){
+				xsArraySetInt(arrID,nAvail,villagerID);
+				xsArraySetInt(arrResID,nAvail,resID);
+				xsArraySetFloat(arrDist,nAvail,distance(vecVillager,kbUnitGetPosition(resID)));
+				nAvail=nAvail+1;
+				
+				debugItem=1;
+				xsArraySetInt(arrDebug,nAvail,debugItem);
+				
+				continue; //We Found Wood.
+			}
+			notokWood=true; bestWood=resID; WoodDist=distance(vecVillager,kbUnitGetPosition(resID));
+			
+			//Check Food:
+			resID=-1;
+			int minDist=999;
+			tmpDist=0;
+			int tmpID=-1;
 			if (kbGetCiv()!=cCivJapanese){
-				resID=getClosestUnitByLocation(cUnitTypeHuntable,cPlayerRelationAny,cUnitStateAny,vecVillager);
-				vecRes=kbUnitGetPosition(resID);
-				tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor*0.4;
-				if (tmpDanger<danger){ determinRes=resID; danger=tmpDanger;}
+				//Huntables:
+				tmpID=getWorkItem(cPlayerRelationAny,cUnitTypeHuntable,vecVillager,55,5,cUnitStateAny);
+				tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+				if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=2;}
 			}
-			
-			resID=getClosestUnitByLocation(cUnitTypeAbstractFruit,cPlayerRelationAny,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger){ determinRes=resID; danger=tmpDanger;}
-			
-			//slaughter controled by slaughter manager...
-			
-			//tmp=tmp+hResAmnt+"/";
+			//Berry:
+			if (resID==-1){
+				tmpID=getWorkItem(cPlayerRelationAny,cUnitTypeAbstractFruit,vecVillager,55,5,cUnitStateAlive);
+				tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+				if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=3;}
+			}
+			if (resID==-1){
+				tmpID=getWorkItem(cPlayerRelationAny,cUnitTypeypBerryBuilding,vecVillager,55,20,cUnitStateAlive);
+				tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+				if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=3;}
+			}
+			//Herdables:
 			if ((kbGetCiv() != cCivIndians) && (kbGetCiv() != cCivJapanese) && (xsGetTime()>200000)){
-				resID=getClosestUnitByLocation(cUnitTypeHerdable,cMyID,cUnitStateAny,vecVillager);
-				vecRes=kbUnitGetPosition(resID);
-				tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor*0.5;
-				if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<4){ determinRes=resID; danger=tmpDanger;}
+				tmpID=getWorkItem(cPlayerRelationAny,cUnitTypeHerdable,vecVillager,50,3,cUnitStateAlive);
+				tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+				if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=4;}
+			}
+			//Farm:
+			tmpID=getWorkItem(cPlayerRelationAlly,cUnitTypeFarm,vecVillager,60+kbGetAge()*10,7);
+			tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+			if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=5;}
+			//Mill:
+			tmpID=getWorkItem(cPlayerRelationAlly,cUnitTypeMill,vecVillager,60+kbGetAge()*10,7);
+			tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+			if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=6;}
+			//RicePaddy:
+			tmpID=getWorkItem(cPlayerRelationAlly,cUnitTypeypRicePaddy,vecVillager,60+kbGetAge()*10,10);
+			tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+			if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=7;}
+			
+			if ((nFood>=nWood || notokWood==true) && nFood>=nGold && resID>0){
+				xsArraySetInt(arrID,nAvail,villagerID);
+				xsArraySetInt(arrResID,nAvail,resID);
+				xsArraySetFloat(arrDist,nAvail,distance(vecVillager,kbUnitGetPosition(resID)));
+				
+				xsArraySetInt(arrDebug,nAvail,debugItem);
+				
+				nAvail=nAvail+1;
+				continue;
+			}
+			notokFood=true; bestFood=resID; FoodDist=minDist;
+			
+			
+			minDist=999;
+			tmpDist=0;
+			resID=-1;
+			//Check Gold:
+			//Mine:
+			tmpID=getWorkItem(cPlayerRelationAny,cUnitTypeMinedResource,vecVillager,50+kbGetAge()*10,15);
+			tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+			if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=8;}
+			//my plantation:
+			tmpID=getWorkItem(cMyID,gPlantationUnit,vecVillager,40+kbGetAge()*10,7);
+			tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+			if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=9;}
+			//ally's plantation:
+			tmpID=getWorkItem(cPlayerRelationAlly,cUnitTypeGold,vecVillager,40+kbGetAge()*10,7);
+			tmpDist=distance(kbUnitGetPosition(tmpID),vecVillager);
+			if (tmpDist<minDist) {resID=tmpID; minDist=tmpDist;debugItem=10;}
+			
+			if ((nGold>=nWood || notokWood==true) && (nGold>=nFood || notokFood==true) && resID>0){
+				xsArraySetInt(arrID,nAvail,villagerID);
+				xsArraySetInt(arrResID,nAvail,resID);
+				xsArraySetFloat(arrDist,nAvail,distance(vecVillager,kbUnitGetPosition(resID)));
+				
+				xsArraySetInt(arrDebug,nAvail,debugItem);
+				
+				nAvail=nAvail+1;
+				continue;
+			}
+			notokGold=true; bestGold=resID; GoldDist=minDist;
+			
+			//No better choice...
+			if (status!=7){
+				xsArraySetInt(arrAssigned,nAssigned,villagerID);
+				nAssigned=nAssigned+1;
+				continue;
+			}
+			//Nothing to do?
+			if (FoodDist<=WoodDist && FoodDist<=GoldDist && bestFood!=-1){
+				resID=bestFood;
+			}
+			if (WoodDist<=FoodDist && WoodDist<=GoldDist && bestWood!=-1){
+				resID=bestWood;
+			}
+			if (GoldDist<=WoodDist && GoldDist<=FoodDist && bestGold!=-1){
+				resID=bestGold;
 			}
 			
-			resID=getClosestUnitByLocation(gFarmUnit,cMyID,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<10){ determinRes=resID; danger=tmpDanger;}
-			
-			//Allies' mill/farm....
-			resID=getClosestUnitByLocation(cUnitTypeFarm,cPlayerRelationAlly,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<10){ determinRes=resID; danger=tmpDanger;}
-			resID=getClosestUnitByLocation(cUnitTypeMill,cPlayerRelationAlly,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<10){ determinRes=resID; danger=tmpDanger;}
-			resID=getClosestUnitByLocation(cUnitTypeypRicePaddy,cPlayerRelationAlly,cUnitStateAny,vecVillager);
-			vecRes=kbUnitGetPosition(resID);
-			tmpDanger=getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, vecRes, 35.0)+distance(vecRes,vecVillager)*factor;
-			if (tmpDanger<danger && kbUnitGetNumberWorkers(resID)<10){ determinRes=resID; danger=tmpDanger;}
-			
-			//
-			if (determinRes!=-1 && (nFood>=nWood||noLogging==1) && (nFood>=nGold||noMining==1) && danger<3){
-				aiTaskUnitWork(villagerID,determinRes);
-				nFood=nFood-1;
+			//tmp=tmp+"?"+resID;
+			if (resID==-1){ //Really nothing to do?
+				aiTaskUnitMove(villagerID,mainBaseVec);
+				xsArraySetInt(arrAssigned,nAssigned,villagerID);
+				nAssigned=nAssigned+1;
 				continue;
 			}
 			
-			bestFood=determinRes;
-			FoodDanger=danger;
+			xsArraySetInt(arrID,nAvail,villagerID);
+			xsArraySetInt(arrResID,nAvail,resID);
+			xsArraySetFloat(arrDist,nAvail,distance(vecVillager,kbUnitGetPosition(resID))+100);
+				//100 for no better choice penalty...
+			
+			debugItem=11;
+			xsArraySetInt(arrDebug,nAvail,debugItem);
+			
+			nAvail=nAvail+1;
 		}
 		
-		//Still nothing to do?
-		if (status==7){
-			if (FoodDanger<=WoodDanger && FoodDanger<=GoldDanger && bestFood!=-1){
-				aiTaskUnitWork(villagerID,bestFood);
-				nFood=nFood-1;
-			}
-			if (WoodDanger<=FoodDanger && WoodDanger<=GoldDanger && bestWood!=-1){
-				aiTaskUnitWork(villagerID,bestWood);
-				nWood=nWood-1;
-			}
-			if (GoldDanger<=WoodDanger && GoldDanger<=FoodDanger && bestGold!=-1){
-				aiTaskUnitWork(villagerID,bestGold);
-				nGold=nGold-1;
-			}
+		//tmp=tmp+nAvail+">";
+		
+		if (nAvail==0) break;
+		float minD=999;
+		int determin=-1;
+		for(index=0; <nAvail){
+			if (xsArrayGetFloat(arrDist,index)<minD)
+				determin=index;
 		}
-    }
+		villagerID=xsArrayGetInt(arrID,determin);
+		resID=xsArrayGetInt(arrResID,determin);
+		debugItem=xsArrayGetInt(arrDebug,determin);
+		xsArraySetInt(arrAssigned,nAssigned,villagerID);
+		nAssigned=nAssigned+1;
+		compensated=compensated-1;
+		aiTaskUnitWork(villagerID, resID);
+		//tmp=tmp+
+		//	villagerID+"("+villagerID+")>"+
+		//	debugItem+":"+resID+","+kbGetUnitBaseTypeID(resID)+","+kbGetUnitTypeName(kbGetUnitBaseTypeID(resID))+"|";
+		if (kbUnitIsType(resID,cUnitTypeGold))
+			nGold=nGold-1;
+		if (kbUnitIsType(resID,cUnitTypeFood))
+			nFood=nFood-1;
+		if (kbUnitIsType(resID,cUnitTypeWood))
+			nWood=nWood-1;
+		if (kbUnitIsType(resID,cUnitTypeAbstractResourceCrate)){
+			nCrate=nCrate+1;
+			opener=villagerID;
+			openCrateTime=xsGetTime();
+		}
+	}
+	
+	//tmp=tmp+"*"+nAssigned+"("+nFood+"/"+nWood+"/"+nGold+")";
 	
 	//Active villagers avoid attack and dynamically change it's assignment.
 	
 	//tmp=tmp+"->"+nFood+"/"+nWood+"/"+nGold;
 	//echoMessage("v:"+totalVillagers+", IdleA:"+idler+":"+tmp);
-	selectRicePaddyTactics();
+	//selectRicePaddyTactics();
+	//echoMessage(tmp);
+	//echoMessage("v:"+totalVillagers+":"+tmp+"\nMyRes:"+kbResourceGet(cResourceFood)+"/"+kbResourceGet(cResourceWood)+"/"+kbResourceGet(cResourceGold));
 }
 
 
@@ -4537,25 +4871,9 @@ group startup
 		  }
 	   }
 	   times=times+1;
+	   echoMessage("Did a market run");
 	}
-	//echoMessage("Market:"+times+"\nMyRes:"+kbResourceGet(cResourceFood)+"/"+kbResourceGet(cResourceWood)+"/"+kbResourceGet(cResourceGold));
 	
-/* artheru: why bother...
-   if ( (goAgain == true) && (fastMode == false) )
-   {
-      // We need to set fast mode
-      xsSetRuleMinIntervalSelf(1);
-      //choMessage("Going to fast mode.");
-      fastMode = true;
-   }
-   if ( (goAgain == false) && (fastMode == true) )
-   {
-      // We need to slow down.
-      xsSetRuleMinIntervalSelf(10);
-      //choMessage("Resource manager going to slow mode.");
-      fastMode = false;
-   }
-   */
 }
 
 
@@ -5051,8 +5369,9 @@ void deathMatchSetup(void)
 {  // Make a bunch of changes to get a deathmatch start
    aiEcho("RUNNING DEATHMATCH SETUP");
    // 20 houses, pronto.
+   /*
    if (cMyCiv != cCivXPSioux)
-      createSimpleBuildPlan(gHouseUnit, 25, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
+      createSimpleBuildPlan(gHouseUnit, 25, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);*/
    // 1 each of the main military buildings, ASAP.
    // artheru: 2 barrack, 1 stable.
    if ( (civIsNative() == false) && (civIsAsian() == false) )
@@ -6140,6 +6459,7 @@ void evaluateBases()
 //==============================================================================
 // updateForecasts
 //==============================================================================
+
 void updateForecasts()
 {
 	if (kbGetAge()==cAge1){
@@ -6162,30 +6482,48 @@ void updateForecasts()
 		//balance resources: //buggy: only 3 values:0.5, 1, 0.3333
 		int increment=kbGetAge()*kbGetAge()*300;
 		int reserveRes=1000+increment;
-		weightFood=kbResourceGet(cResourceFood)-reserveRes;
-		if (weightFood<increment*5) weightFood=0.3;
-		if (weightFood<increment*3) weightFood=0.5;
-		if (weightFood<increment) weightFood=0.7;
-		if (weightFood<0) weightFood=1;
+		float nowFood=0;
+		float nowWood=0;
+		float nowGold=0;
+		nowFood=kbResourceGet(cResourceFood)-reserveRes;
+		if (nowFood<increment*5) weightFood=0.3;
+		if (nowFood<increment*3) weightFood=0.5;
+		if (nowFood<increment) weightFood=0.7;
+		if (nowFood<0) weightFood=1;
+		if (nowFood<-300) weightFood=1.3;
+		if (nowFood<-800) weightFood=1.9;
+		if (nowFood<-1100) weightFood=2.3;
+		if (nowFood<-1800) weightFood=2.9;
+		if (nowFood<-3000) weightFood=3.5;
 		
-		weightGold=kbResourceGet(cResourceGold)-reserveRes;
-		if (weightGold<increment*5) weightGold=0.3;
-		if (weightGold<increment*3) weightGold=0.5;
-		if (weightGold<increment) weightGold=0.7;
-		if (weightGold<0) weightGold=1;
+		nowGold=kbResourceGet(cResourceGold)-reserveRes;
+		if (nowGold<increment*5) weightGold=0.3;
+		if (nowGold<increment*3) weightGold=0.5;
+		if (nowGold<increment) weightGold=0.7;
+		if (nowGold<0) weightGold=1;
+		if (nowGold<-300) weightGold=1.3;
+		if (nowGold<-800) weightGold=1.9;
+		if (nowGold<-1100) weightGold=2.3;
+		if (nowGold<-1800) weightGold=2.9;
+		if (nowGold<-3000) weightGold=3.5;
 		
-		weightWood=kbResourceGet(cResourceWood)-reserveRes;
-		if (weightWood<increment*5) weightWood=0.3;
-		if (weightWood<increment*3) weightWood=0.5;
-		if (weightWood<increment) weightWood=0.7;
-		if (weightWood<0) weightWood=1;
+		nowWood=kbResourceGet(cResourceWood)-reserveRes;
+		if (nowWood<increment*5) weightWood=0;
+		if (nowWood<increment*4) weightWood=0.2;
+		if (nowWood<increment*2) weightWood=0.4;
+		if (nowWood<increment) weightWood=0.7;
+		if (nowWood<0) weightWood=1;
+		if (nowWood<-300) weightWood=1.3;
+		if (nowWood<-800) weightWood=1.9;
+		if (nowWood<-1100) weightWood=2.3;
+		if (nowWood<-1800) weightWood=2.9;
+		if (nowWood<-3000) weightWood=3.5;
 		
 		float total=weightFood+weightGold+weightWood;
 		weightFood=weightFood/total;
 		weightWood=weightWood/total;
 		weightGold=weightGold/total;
-		//echoMessage("Forecast:"+weightFood+" "+weightWood+" "+weightGold+"r"
-		//+reserveRes+"t"+total+"\nMyRes:"+kbResourceGet(cResourceFood)+"/"+kbResourceGet(cResourceWood)+"/"+kbResourceGet(cResourceGold));
+		//echoMessage("Forecast:"+weightFood+" "+weightWood+" "+weightGold+"r"+reserveRes+"t"+total+"\nMyRes:"+kbResourceGet(cResourceFood)+"/"+kbResourceGet(cResourceWood)+"/"+kbResourceGet(cResourceGold));
 	}
 }
 
@@ -6247,17 +6585,19 @@ void updateResources()
          gTimeForPlantations = true;
       }      
 	  
-	nVillagers=kbUnitCount(cMyID, cUnitTypeAbstractVillager, cUnitStateAlive);
+	//nVillagers=kbUnitCount(cMyID, cUnitTypeAbstractVillager, cUnitStateAlive);
 	
 	  if (gTimeToFarm && aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gFarmUnit) < 0){
 		ecoCount=kbUnitCount(cMyID,gFarmUnit,cUnitStateAlive);
 		if (nVillagers>ecoCount*7){
-			p=50;
-			if (nVillagers>ecoCount*10) p=50;
-			if (nVillagers>ecoCount*17) p=68;
-			if (nVillagers>ecoCount*25) p=78;
-			if (nVillagers>ecoCount*32) p=90;
-			if (nVillagers>ecoCount*39) p=99;
+			if (ecoCount==0) p=99;
+			if (ecoCount==1) p=90;
+			if (ecoCount==2) p=85;
+			if (ecoCount==3) p=70;
+			if (ecoCount==4) p=50;
+			if (ecoCount==5) p=30;
+			if (ecoCount==6) p=20;
+			if (ecoCount>6) p=10;
 			createSimpleBuildPlan(gFarmUnit, 1, p, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  
 			//echoMessage("new mill "+p);
 		}
@@ -6266,12 +6606,14 @@ void updateResources()
 	  if (gTimeForPlantations && aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gPlantationUnit) < 0){
 		ecoCount=kbUnitCount(cMyID,gPlantationUnit,cUnitStateAlive);
 		if (nVillagers>ecoCount*7){
-			p=50;
-			if (nVillagers>ecoCount*10) p=60;
-			if (nVillagers>ecoCount*17) p=75;
-			if (nVillagers>ecoCount*25) p=86;
-			if (nVillagers>ecoCount*32) p=95;
-			if (nVillagers>ecoCount*39) p=99;
+			if (ecoCount==0) p=99;
+			if (ecoCount==1) p=90;
+			if (ecoCount==2) p=85;
+			if (ecoCount==3) p=70;
+			if (ecoCount==4) p=50;
+			if (ecoCount==5) p=30;
+			if (ecoCount==6) p=20;
+			if (ecoCount>6) p=10;
 			createSimpleBuildPlan(gPlantationUnit, 1, p, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  
 			//echoMessage("new Plantation "+p);
 		}
@@ -6299,9 +6641,6 @@ void econMaster(int mode=-1, int value=-1)
    // exchange rates.
    updateForecasts(); 
 
-   // Set desired gatherer ratios.  Spread them out per base, set per-base 
-   // resource breakdowns.
-   updateGatherers();
    
    // Update our settler maintain targets, based on age, personality.
    updateSettlerCounts();
@@ -6324,7 +6663,7 @@ void econMaster(int mode=-1, int value=-1)
 
 rule gathererController
 active
-minInterval 2
+minInterval 1
 {
 	updateGatherers();
 }
@@ -6362,7 +6701,7 @@ minInterval 15
 
 
 rule doWalls
-active
+inactive
 minInterval 10
 {
    if ( kbGetAge() <= cAge2 )
@@ -7493,61 +7832,43 @@ minInterval 10
 rule useLevy
 inactive
 group tcComplete
-minInterval 10
+minInterval 3
 {
-   // Disable rule for native or Asian civs why?
-   /*
-   if ((civIsNative() == true) || (civIsAsian() == true))
-   {
-      xsDisableSelf();
-      return;
-   }
-*/
-   // Check to see if town is being overrun.  If so, generate a plan
-   // to 'research' levy.  If plan is active but enemies disappear, 
-   // kill it.  Once research is complete, end this rule.
-   
-   //static int levyPlan = -1;
+	return;
+	
+   static int levyPlan = -1;
    vector mainBaseVec = cInvalidVector;
    
    mainBaseVec =  kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID));
    
-   int enemyCount = getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, mainBaseVec, 40.0);
-   int allyCount = getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationAlly, cUnitStateAlive, mainBaseVec, 40.0);
+   float enemyHP = getlocHP(mainBaseVec,40);
+   float allyHP = getlocHP(mainBaseVec,40,cPlayerRelationAlly);
 
-   
-   /*
-   if (kbTechGetStatus(cTechLevy) != cTechStatusActive) // this check does not work!
-   {  // We're done, we've used levy
-      aiEcho("   ** We've used levy, disabling useLevy rule.");
-      xsDisableSelf();
-      return;
-   }  
-   */
-   
-   //if (levyPlan < 0) // No plan, see if we need one.
-   //{
-      if (enemyCount > (allyCount+kbGetAge()*2+1)) // We're behind by 6 or more
+   string tmp="e"+enemyHP+"f:"+allyHP+"\nMyRes:"+kbResourceGet(cResourceFood)+"/"+kbResourceGet(cResourceWood)+"/"+kbResourceGet(cResourceGold);
+      
+   if (levyPlan < 0) // No plan, see if we need one.
+   {
+      if (enemyHP >= allyHP+250) // We're behind by 6 or more
       {
-         echoMessage("LEVY!"+enemyCount+"e"+allyCount+"f:"+
-		 
-		 aiTaskUnitResearch(getUnit(cUnitTypeTownCenter),cTechLevy)+"\nMyRes:"+kbResourceGet(cResourceFood)+"/"+kbResourceGet(cResourceWood)+"/"+kbResourceGet(cResourceGold));
-         //levyPlan = createSimpleResearchPlan(cTechLevy, getUnitByLocation(cUnitTypeTownCenter, cMyID, cUnitStateAlive, mainBaseVec, 40.0), cMilitaryEscrowID, 100);     // Extreme priority        
+		tmp=tmp+"\nstart";
+         levyPlan = createSimpleResearchPlan(cTechLevy, getUnit(cUnitTypeTownCenter), cMilitaryEscrowID, 99);     // Extreme priority
       }
-   /*}
+   }
    else  // Plan exists, make sure it's still needed
    {
-      if (enemyCount > (allyCount+kbGetAge()*2+1))
+      
+      if (enemyHP >= allyHP+250)
       {  // Do nothing
-         aiEcho("   ** Still waiting for Levy.");
+		tmp=tmp+"\nwait";
       }
       else
       {
-         //echoMessage("   ** Cancelling levy.");
+         tmp=tmp+"\nStop";
          aiPlanDestroy(levyPlan);
          levyPlan = -1;
       }
-   }*/
+   }
+    //echoMessage(tmp);
 }
 
 
@@ -8185,47 +8506,63 @@ int createSimpleQuery(int playerRelationOrID=cMyID, int unitTypeID=-1, int state
 
 vector shrineBuildPlaceSearch(void)
 {
-   vector loc = cInvalidVector;
-   bool found = false;
-   int numHuntableThere = 0;
-   int numShrineThere = 0;
-   int j = 0;
-   int i = 0;
-
-   static int huntableQuery = -1;
-   huntableQuery = createSimpleQuery(0, cUnitTypeHuntable, cUnitStateAlive);
-   kbUnitQueryResetResults(huntableQuery);
-   int huntableCount = kbUnitQueryExecute(huntableQuery);
-   int numStart = aiRandInt(huntableCount);
-   int numRand = aiRandInt(huntableCount);
-   int huntableID = -1;
-   for (j=numStart; < numStart + huntableCount)
-   {
-      if (j >= huntableCount)
-	i = j - huntableCount;
-      else
-	i = j;
-      huntableID = kbUnitQueryGetResult(huntableQuery, i);
-      loc = kbUnitGetPosition(huntableID);		
-      numHuntableThere = getUnitCountByLocation(cUnitTypeHuntable, 0, cUnitStateAlive, loc, 35.0);
-      numShrineThere = getUnitCountByLocation(cUnitTypeypShrineJapanese, cMyID, cUnitStateABQ, loc, 35.0);
-      if (numHuntableThere < (numShrineThere * 4 + 2))
-	continue; 				    
-      if ((getAllyCount() > 0)&&(getUnitByLocation(cUnitTypeTownCenter, cPlayerRelationAlly, cUnitStateAlive, loc, 120.0) >= 0))
-	continue; 
-      if (getUnitByLocation(cUnitTypeTownCenter, cPlayerRelationEnemyNotGaia, cUnitStateAlive, loc, 120.0) >= 0)
-	continue; 
-      if (getUnitByLocation(cUnitTypeFortFrontier, cPlayerRelationEnemyNotGaia, cUnitStateAlive, loc, 60.0) >= 0)  
-	continue;           
-      if (getUnitByLocation(cUnitTypeMilitaryBuilding, cPlayerRelationEnemyNotGaia, cUnitStateAlive, loc, 60.0) >= 0)  
-	continue;         
-      found = true;
-       break;	
-   }      
-   if (found == false)
-     loc = cInvalidVector;
-
-   return(loc);
+	static int huntableQuery = -1;
+	if (huntableQuery==-1){
+		huntableQuery=kbUnitQueryCreate("queryHuntablesForShine");
+		kbUnitQuerySetIgnoreKnockedOutUnits(huntableQuery, true);
+		kbUnitQuerySetPlayerID(huntableQuery, -1);
+		kbUnitQuerySetPlayerRelation(huntableQuery, cPlayerRelationAny);
+		kbUnitQuerySetState(huntableQuery, cUnitStateAlive);
+		kbUnitQuerySetUnitType(huntableQuery, cUnitTypeHuntable);
+	}
+	
+	kbUnitQueryResetResults(huntableQuery);
+	int huntableCount = kbUnitQueryExecute(huntableQuery);
+	
+	//string tmp="HN:"+huntableCount;
+	float minDist=9999;
+    vector loc = cInvalidVector;
+    int i = 0;
+	for(i=0;<huntableCount){
+		int hID=kbUnitQueryGetResult(huntableQuery, i);
+		vector tmpLoc=kbUnitGetPosition(hID);
+		int nHuntables=getUnitCountByLocation(cUnitTypeHuntable, 0, cUnitStateAlive, tmpLoc, 20.0);
+		int shrines = getUnitCountByLocation(cUnitTypeypShrineJapanese, cMyID, cUnitStateABQ, tmpLoc, 20.0);
+		if (nHuntables<=shrines*4) {
+			//tmp=tmp+"Sh,";
+			continue;
+		}
+		float enemyHP=getlocHP(tmpLoc,30);
+		if (enemyHP>800) {
+			//tmp=tmp+"EHP,";
+			continue;
+		}
+		int nEnemyBuildings=getUnitByLocation(cUnitTypeLogicalTypeBuildingsNotWallsOrGroves, cPlayerRelationEnemyNotGaia, cUnitStateAlive, tmpLoc, 70.0);
+		if (nEnemyBuildings>1) {
+			//tmp=tmp+"EB,";
+			continue;
+		}
+		
+		int myBuildingID=getClosestUnitByLocation(cUnitTypeLogicalTypeBuildingsNotWallsOrGroves,cMyID,cUnitStateAlive,tmpLoc);
+		int myExplorerID=getClosestUnitByLocation(cUnitTypeAbstractJapaneseMonk,cMyID,cUnitStateAlive,tmpLoc);
+		//So it ignore wheather monk is dead or not.
+		
+		float tmpScore=0;
+		if (myBuildingID==-1) 
+			tmpScore=999+distance(kbUnitGetPosition(myExplorerID),tmpLoc);
+		else tmpScore=distance(kbUnitGetPosition(myBuildingID),tmpLoc);
+		
+		if (tmpScore<2) continue;
+		if (tmpScore<minDist){
+			minDist=tmpScore;
+			loc=tmpLoc;
+		}
+		//tmp=tmp+"OK"+tmpScore+",";
+	}
+   
+	//echoMessage(tmp);
+	
+    return(loc);
 }
 
 //==============================================================================
@@ -8239,214 +8576,65 @@ inactive
 group tcComplete
 minInterval 3
 {  
-   if ( (kbGetCiv() == cCivXPSioux) && (kbUnitCount(cMyID, gMarketUnit, cUnitStateAlive) > 0) )
-   {  return;  }
-   
-   int marketBuildPlanID = -1; 
-   int houseBuildPlanID = -1;
-   static int lastHousePlanTime = 0;
-   static int lastShrineTime = 0;
-   static bool housePlaceDetermined = false;
-   static vector housePosition = cInvalidVector;
-
-   //at first, determine the place.
-   if (housePlaceDetermined == false)
-   {
-      static bool placeFound = true;
-      int offSet = 45;
-      vector myTCLocation = kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID));
-      vector normalVec = xsVectorNormalize(myTCLocation - kbGetMapCenter());
-      if ((getAllyCount()>0)&&(cRandomMapName=="northwest territory"))
-        normalVec = xsVectorNormalize(kbUnitGetPosition(getUnit(cUnitTypeHomeCityWaterSpawnFlag, cMyID))-myTCLocation);
-		
-      housePosition = myTCLocation + normalVec * offSet;
-		
-       if ((getAllyCount()>0)&&((cRandomMapName=="california")||(cRandomMapName=="carolina")||(cRandomMapName=="araucania")))
-		{
-			if (getUnitCountByLocation(cUnitTypeTownCenter, cPlayerRelationAlly, cUnitStateABQ, housePosition, 40.0) > 0)
-			{
-				normalVec = xsVectorNormalize(myTCLocation-kbUnitGetPosition(getUnit(cUnitTypeHomeCityWaterSpawnFlag, cMyID)));
-				housePosition = myTCLocation + normalVec * offSet;
-			}
-		}
-		
-		while ((kbAreaGroupGetIDByPosition(housePosition) != kbAreaGroupGetIDByPosition(myTCLocation))||(xsVectorGetY(housePosition) != xsVectorGetY(kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID)))))
-		{  
-			offSet = offSet - 1;
-			housePosition = myTCLocation + (normalVec * offSet);
-			if (offSet < 5)
-			{
-				placeFound = false;
-				break; 
-			}
-		}
-		housePlaceDetermined = true;
-	}
-
-	if ((placeFound == true) && (xsGetTime() > 120000) && (kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ) < 1))
- 		placeFound = false;    
-
-
-	// market build plan is dealt with also here, to use the house build place. 
-	marketBuildPlanID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gMarketUnit);
-	if ((marketBuildPlanID < 0) && (kbUnitCount(cMyID, gMarketUnit, cUnitStateAlive) < 1))
-	{
-	   if (((agingUpToOrAbove(cAge4) == true))||
-		   ((agingUpToOrAbove(cAge3) == true))||
-		   ((kbGetCiv() == cCivDutch) && (kbGetPop() > 25 ))||
-		   ((kbGetCiv() != cCivDutch) &&((kbGetPop() > 16) || (kbGetAge() > cAge1)))||
-		   (aiGetGameMode() == cGameModeDeathmatch))
-		{
-			if (placeFound == true)
-				marketBuildPlanID = createLocationBuildPlan(gMarketUnit, 1, 100, true, cEconomyEscrowID, housePosition, 1);
-			else
-				marketBuildPlanID = createSimpleBuildPlan(gMarketUnit, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-			aiEcho("Starting a market build plan.");
-			return; 
-		}
-	}
-
-	////////then, with house build plan./////////
-
-	if (kbGetCiv() == cCivXPSioux)
-	{
- 		xsSetRuleMinIntervalSelf(30); 
-		return;
-	}
- 
-	int numDelta = kbGetBuildLimit(cMyID, gHouseUnit)- kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ);
-	if (numDelta <= 0)   // at limit.
-		return;  
-
-    int houseDelta = 9 + 10*kbGetAge();
-
-	if ((agingUpToOrAbove(cAge3) == false)||(agingUpToOrAbove(cAge4) == false)) 
-    {
-		houseDelta = 5;
-	}
-
-    //Japanese shrine boom.
+	if (kbGetCiv()==cCivXPSioux) return;
+	
+   int houseBuildPlanID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gHouseUnit);
+   static int shrineStartedTime=-1;
+   /*Damn Explorer cannot be checked via state!
+   if (houseBuildPlanID>=0 && kbUnitCount(cMyID,cUnitTypeAbstractJapaneseMonk,cUnitStateAlive)==0)
+		aiPlanAddUnitType(houseBuildPlanID, gEconUnit, 1, 1, 1);
+   */
 	if (((kbGetCiv() == cCivSPCJapanese)||(kbGetCiv() == cCivJapanese)||(kbGetCiv() == cCivSPCJapaneseEnemy)))
 	{
-		houseBuildPlanID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gHouseUnit);
-		if ((houseBuildPlanID >= 0) && (xsGetTime() - lastShrineTime > 30000) && (lastShrineTime > 0))
-		{
-			aiPlanDestroy(houseBuildPlanID);
-			houseBuildPlanID = -1;
-		}
-		if ( (aiGetFallenExplorerID() < 0) ||
-                     (kbUnitIsType(aiGetFallenExplorerID(), cUnitTypeAbstractJapaneseMonk) == false) )       
-   {			
-				vector shrineBuildPlace = shrineBuildPlaceSearch();
-				int numHuntableThere = getUnitCountByLocation(cUnitTypeHuntable, 0, cUnitStateAlive, shrineBuildPlace, 30.0);
-				int numShrineThere = getUnitCountByLocation(cUnitTypeypShrineJapanese, cMyID, cUnitStateABQ, shrineBuildPlace, 30.0);
-				if ((shrineBuildPlace != cInvalidVector)&&
-					(numHuntableThere >= (numShrineThere * 4 + 2))&&
-					(getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cPlayerRelationEnemyNotGaia, cUnitStateAlive, shrineBuildPlace, 50.0) < 1))
-				{
-					houseBuildPlanID = aiPlanCreate("shrineBuildPlanID ", cPlanBuild);	
-					aiPlanSetVariableInt(houseBuildPlanID, cBuildPlanBuildingTypeID, 0, gHouseUnit);	
-					aiPlanSetVariableVector(houseBuildPlanID, cBuildPlanCenterPosition, 0, shrineBuildPlace);
-					aiPlanSetVariableFloat(houseBuildPlanID, cBuildPlanCenterPositionDistance, 0, 5.0);
-					aiPlanAddUnitType(houseBuildPlanID, cUnitTypeAbstractJapaneseMonk, 1, 1, 1);
-					aiPlanSetMilitary(houseBuildPlanID, false);
-					aiPlanSetEconomy(houseBuildPlanID, true);	
-					aiPlanSetEscrowID(houseBuildPlanID, cEconomyEscrowID);
-					aiPlanSetDesiredPriority(houseBuildPlanID, 96);
-					aiPlanSetActive(houseBuildPlanID);
-					aiEcho("Starting a shrine build plan.");
-					//lastHousePlanTime = xsGetTime();				
-					lastShrineTime = xsGetTime();
-				}			
-		}
-		if (kbGetAge() >= cAge2)
-		{
-			if (((kbGetPopCap() - kbGetPop()) < houseDelta)&&(kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ)-kbUnitCount(cMyID, gHouseUnit, cUnitStateAlive) < 3))
-			{
-				if (placeFound == true)
-					houseBuildPlanID = createLocationBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, housePosition, 1);
-				else
-					houseBuildPlanID = createSimpleBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-				lastShrineTime = xsGetTime();
-				aiEcho("Starting a house build plan.");
-				return;	
-			}		
-		}
-		if (kbGetAge() < cAge2)
-		{
-			if ((kbTechGetStatus(cTechypBigConsulatePortuguese) == cTechStatusActive) && (kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ) < 1))
-			{
-				if (placeFound == true)
-					houseBuildPlanID = createLocationBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, housePosition, 1);
-				else
-					houseBuildPlanID = createSimpleBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-				lastShrineTime = xsGetTime();
-				aiEcho("Starting a house build plan.");
-			}
-		}
-		return;
+		if (houseBuildPlanID>=0) return;
+		int gBuilder=cUnitTypeAbstractJapaneseMonk;
+			
+		vector shrineBuildPlace = shrineBuildPlaceSearch();
+		
+		//aiTaskUnitMove(getUnit(cUnitTypeypMonkJapanese),shrineBuildPlace);
+		aiTaskUnitMove(getUnit(cUnitTypeypMonkJapanese2),shrineBuildPlace);
+		
+		//echoMessage("Shrine failed:"+(shrineBuildPlace));
+		
+		if ((shrineBuildPlace != cInvalidVector)) {
+			int oP=houseBuildPlanID;
+			houseBuildPlanID = aiPlanCreate("shrineBuildPlanID ", cPlanBuild);	
+			aiPlanSetVariableInt(houseBuildPlanID, cBuildPlanBuildingTypeID, 0, gHouseUnit);	
+			aiPlanSetVariableFloat(houseBuildPlanID, cBuildPlanBuildingBufferSpace, 0, 4.0);
+			aiPlanSetVariableVector(houseBuildPlanID, cBuildPlanCenterPosition, 0, shrineBuildPlace);
+			aiPlanSetVariableFloat(houseBuildPlanID, cBuildPlanCenterPositionDistance, 0, 5.0);
+			
+			aiPlanAddUnitType(houseBuildPlanID, cUnitTypeAbstractJapaneseMonk, 1, 1, 2);
+			
+			aiPlanSetMilitary(houseBuildPlanID, false);
+			aiPlanSetEconomy(houseBuildPlanID, true);	
+			aiPlanSetEscrowID(houseBuildPlanID, cEconomyEscrowID);
+			aiPlanSetDesiredPriority(houseBuildPlanID, 96);
+			aiPlanSetActive(houseBuildPlanID);
+			
+			shrineStartedTime=xsGetTime();
+			echoMessage("Ss"+houseBuildPlanID+"@"+shrineBuildPlace+","+oP);
+			//lastHousePlanTime = xsGetTime();				
+			//lastShrineTime = xsGetTime();
+		}//else 
 	}
-	     
-   houseBuildPlanID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gHouseUnit);
-   if ((houseBuildPlanID >= 0) && (xsGetTime() - lastHousePlanTime > 120000) && (lastHousePlanTime > 0))
-   {
-      aiPlanDestroy(houseBuildPlanID);
-	  houseBuildPlanID = -1;
-   }
+	
+   if ( (kbGetCiv() == cCivDutch) && (kbUnitCount(cMyID, cUnitTypeBank, cUnitStateABQ) < 1) && (kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ) >= 1))
+      return;  // Dutch need bank before getting extra houses
 
-
-   if ((houseBuildPlanID < 0) && (kbGetAge() == cAge1))  
-   {
-		if ((((kbGetCiv() == cCivChinese)||(kbGetCiv() == cCivBritish)) && (kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ) < 2))||
-		   ((kbGetCiv() == cCivBritish) && (agingUp() == true))||
-           ((kbGetCiv() == cCivIndians)&&(kbTechGetStatus(cTechypBigConsulatePortuguese) == cTechStatusActive) && (kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ) < 1)))
-		{ //for Chinese, we choose 2 village opening.
-		    if (placeFound == true)
-              houseBuildPlanID = createLocationBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, housePosition, 1);
-            else
-			  houseBuildPlanID = createSimpleBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-			lastHousePlanTime = xsGetTime();
-			aiEcho("Starting a house build plan.");
-			return; 
-		}
-		else if (kbUnitCount(cMyID, gHouseUnit, cUnitStateABQ) < 1)
-		{ //the first house
-		    if (placeFound == true)
-              houseBuildPlanID = createLocationBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, housePosition, 1);
-            else
-			  houseBuildPlanID = createSimpleBuildPlan(gHouseUnit, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-			lastHousePlanTime = xsGetTime();
-			aiEcho("Starting a house build plan.");
-			return; 
-		}
-   }
-
-   if ((houseBuildPlanID < 0) && (kbGetAge() >= cAge2))
-   {
-		if ((kbGetCiv() == cCivBritish)||
-		   ((kbGetPopCap() - kbGetPop()) < houseDelta))
-		{
-		    if (placeFound == true)
-              houseBuildPlanID = createLocationBuildPlan(gHouseUnit, 1, 99, true, cEconomyEscrowID, housePosition, 1);
-            else
-			  houseBuildPlanID = createSimpleBuildPlan(gHouseUnit, 1, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-			lastHousePlanTime = xsGetTime();
-			aiEcho("Starting a house build plan.");
-			return; 
-		}
-		
-		else if ((kbGetPopCap() - kbGetPop()) < houseDelta){
-		    if (placeFound == true)
-              houseBuildPlanID = createLocationBuildPlan(gHouseUnit, 1, 85, true, cEconomyEscrowID, housePosition, 1);
-            else
-			  houseBuildPlanID = createSimpleBuildPlan(gHouseUnit, 1, 85, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
-			lastHousePlanTime = xsGetTime();
-			aiEcho("Starting a house build plan.");
-			return; 
-		}
-		
-   }
-
+   if (kbGetBuildLimit(cMyID, gHouseUnit) <= kbUnitCount(cMyID, gHouseUnit, cUnitStateAlive))
+      return;     // Don't build if we're at limit.
+   
+  
+   if ( (kbGetPopCap()-kbGetPop()) < (15 + (10*kbGetAge())) && 
+		(	(houseBuildPlanID < 0)  || 
+			((houseBuildPlanID >= 0) && (kbGetCiv()==cCivJapanese) && (xsGetTime()-shrineStartedTime>30000))	)   // None in progress, and pop headroom < 15 in cAge1, etc.  
+	  )
+    {  // Start a new one  
+		aiPlanDestroy(houseBuildPlanID);
+		createSimpleBuildPlan(gHouseUnit, 1, 95, true, cEconomyEscrowID, 	kbBaseGetMainID(cMyID), 1);
+		echoMessage("pop cap!, build one");
+    }
 }
 
 
@@ -8472,7 +8660,7 @@ minInterval 60
    }
 
    // Don't start too soon.
-   if (xsGetTime() < 60*1000*15)
+   if (kbGetAge() < cAge1)
      return;
 
    // Build a monastery if there is none
@@ -8483,6 +8671,14 @@ minInterval 60
    }
 
    // Research monk for Chinese, Indians and Japanese
+   if (kbTechGetStatus(cTechypMonasteryJapaneseHealing) == cTechStatusObtainable)
+   {
+      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechypMonasteryJapaneseHealing);
+      if (upgradePlanID >= 0)
+         aiPlanDestroy(upgradePlanID);
+      createSimpleResearchPlan(cTechypMonasteryJapaneseHealing, getUnit(cUnitTypeypMonastery), cMilitaryEscrowID, 50);
+      return;
+   }
    if (kbTechGetStatus(cTechypMonasteryCriticalUpgrade) == cTechStatusObtainable)
    {
       upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechypMonasteryCriticalUpgrade);
@@ -8539,14 +8735,6 @@ minInterval 60
       createSimpleResearchPlan(cTechypMonasteryIndianSpeed, getUnit(cUnitTypeypMonastery), cMilitaryEscrowID, 50);
       return;
    }
-   if (kbTechGetStatus(cTechypMonasteryJapaneseHealing) == cTechStatusObtainable)
-   {
-      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechypMonasteryJapaneseHealing);
-      if (upgradePlanID >= 0)
-         aiPlanDestroy(upgradePlanID);
-      createSimpleResearchPlan(cTechypMonasteryJapaneseHealing, getUnit(cUnitTypeypMonastery), cMilitaryEscrowID, 50);
-      return;
-   }
    if (kbTechGetStatus(cTechypMonasteryKillingBlowUpgrade) == cTechStatusObtainable)
    {
       upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechypMonasteryKillingBlowUpgrade);
@@ -8600,8 +8788,8 @@ minInterval 3
       return;
    }
 
-   // Build a consulate if there is none
-   if ((kbUnitCount(cMyID, cUnitTypeypConsulate, cUnitStateABQ) < 1) && (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypConsulate) < 0))
+   // Build a consulate if there is none, not until age1...
+   if ((kbUnitCount(cMyID, cUnitTypeypConsulate, cUnitStateABQ) < 1) && (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypConsulate) < 0) && (kbGetAge()>cAge1))
    {
       createSimpleBuildPlan(cUnitTypeypConsulate, 1, 75, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
       aiEcho("Starting a new consulate build plan.");
@@ -8951,23 +9139,6 @@ minInterval 10
 
 
 //==============================================================================
-/* BHG orchard monitor
-
-   If we have a wagon, build an orchard immediately.
-
-*/
-//==============================================================================
-rule orchardMonitor
-inactive
-group tcComplete
-minInterval 5
-{ 
-  if (kbUnitCount(cMyID, cUnitTypeYPBerryWagon1, cUnitStateAlive) > 0) 
-  {  createSimpleBuildPlan(cUnitTypeypBerryBuilding, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  }
-}
-
-
-//==============================================================================
 /* Building monitor
 
    Make sure we have the right number of buildings, or at least a build plan,
@@ -8975,6 +9146,9 @@ minInterval 5
 
 */
 //==============================================================================
+
+
+
 rule buildingMonitor
 inactive
 group tcComplete
@@ -8983,15 +9157,15 @@ minInterval 3
    int planID = -1;
    if (cvOkToBuild == false)
       return;
-   
+   /*
    if (gDefenseReflexBaseID == kbBaseGetMainID(cMyID))
       return;  
-
+*/
    //If I could be, do it.
    int coveredWagon = getUnit(cUnitTypeCoveredWagon, cMyID, cUnitStateAlive);
    if ((coveredWagon <= 0) && (xsGetTime() > gTCStartTime) && (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeTownCenter) < 0))
    {
-   createSimpleBuildPlan(cUnitTypeTownCenter, 1, 90, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
+	createSimpleBuildPlan(cUnitTypeTownCenter, 1, 90, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
    }
    // If Dutch, add banks to the build limit.
    if (kbGetCiv() == cCivDutch)
@@ -9013,6 +9187,17 @@ minInterval 3
       }
    }
    
+   //a market is needed...
+   planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gMarketUnit);
+   if (kbUnitCount(cMyID, gEconUnit, cUnitStateAlive)>=10){
+      if ( (planID < 0) && (kbUnitCount(cMyID, gMarketUnit, cUnitStateAlive) < 1))
+      {
+         createSimpleBuildPlan(gMarketUnit, 1, 85, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  // Just higher than house
+         aiEcho("Starting a new market build plan.");
+      }
+   }
+   
+   
    if ( (kbGetCiv() == cCivDutch) && (kbUnitCount(cMyID, cUnitTypeBank, cUnitStateABQ) < 1) )
       return;
 
@@ -9027,11 +9212,11 @@ minInterval 3
       }
    }
 
-   // If Indians, at least 2 sacred fields
+   // If Indians, at least 1 sacred fields
    if (cMyCiv == cCivIndians)
    {
       planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypSacredField);
-      if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeypSacredField, cUnitStateAlive) < 2) )
+      if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeypSacredField, cUnitStateAlive) < 1) )
       { 
          createSimpleBuildPlan(cUnitTypeypSacredField, 1, 65, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
          aiEcho("Starting a new sacred field build plan.");
@@ -9068,17 +9253,6 @@ minInterval 3
       }
    }
 
-   //At least one market
-   planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gMarketUnit);
-   if ( (kbGetPopCap()-kbGetPop()) > 20 ) // If we're OK on houses...
-   {
-      if ( (planID < 0) && (kbUnitCount(cMyID, gMarketUnit, cUnitStateAlive) < 1) )
-      {     // Start a new one
-         createSimpleBuildPlan(gMarketUnit, 1, 96, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  // Just higher than house
-         aiEcho("Starting a new market build plan.");
-      }   
-   }
-   
    // If Russian, at least 2 block house
 	if (kbGetCiv() == cCivRussians)
 	{
@@ -9177,7 +9351,7 @@ minInterval 3
    }
    
    // Mill construction is handled in updateFoodBreakdown, do not build mills here
-   
+   /*
    // Livestock pen if we own critters ( Indians only)
    int livestockMinimum = 10;
    if (kbGetCiv() == cCivIndians)
@@ -9185,13 +9359,13 @@ minInterval 3
    planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, gLivestockPenUnit);
    if ( (planID < 0) && (kbUnitCount(cMyID, gLivestockPenUnit, cUnitStateAlive) < 1) && (kbUnitCount(cMyID, cUnitTypeHerdable, cUnitStateAlive) >= livestockMinimum) )
    {     // Start a new one
-      if (kbGetCiv() == cCivIndians) // Chinese will use villages, Japanese shrines, and natives a farm
-      {
+      //if (kbGetCiv() == cCivIndians) // Chinese will use villages, Japanese shrines, and natives a farm
+      //{
          createSimpleBuildPlan(gLivestockPenUnit, 1, 65, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
          aiEcho("Starting a new livestock pen build plan.");
-      }
+      //}
    }
-
+*/
    // If Indians, at least 2 sacred fields
    if (cMyCiv == cCivIndians)
    {
@@ -9235,7 +9409,7 @@ minInterval 3
          aiEcho("Starting a new arsenal build plan.");
       }
    }
-   
+   /*
    // At least one church (not for natives or Asians)
    if ((civIsNative() == false) && (civIsAsian() == false))
    {
@@ -9246,7 +9420,7 @@ minInterval 3
          aiEcho("Starting a new church build plan.");
       }
    }
-  
+  */
    // At least one artillery depot (not for Aztecs, Sioux or Asians)
    if ( (cMyCiv != cCivXPAztec) && (cMyCiv != cCivXPSioux) && (cMyCiv != cCivFrench) && (civIsAsian() == false) ) 
    {
@@ -9296,11 +9470,11 @@ minInterval 3
    // **********************************************************
 
   
-   // If Russian, at least 2 blockhouses
+   // If Russian, at least 4 blockhouses
    if (kbGetCiv() == cCivRussians)
    {
       planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeBlockhouse);
-      if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeBlockhouse, cUnitStateAlive) < 2) )
+      if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeBlockhouse, cUnitStateAlive) < 4) )
       { 
          createSimpleBuildPlan(cUnitTypeBlockhouse, 1, 70, false, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 1);
          aiEcho("Starting a new blockhouse build plan.");
@@ -9344,7 +9518,7 @@ minInterval 3
    else // Every other civ, at least 3 barracks.
    {
       planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeBarracks);
-      if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeBarracks, cUnitStateAlive) < 3) )
+      if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeBarracks, cUnitStateAlive) < 4) )
       {
          createSimpleBuildPlan(cUnitTypeBarracks, 1, 70, false, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 1);
          aiEcho("Starting a new barracks build plan.");
@@ -9392,16 +9566,16 @@ minInterval 3
       }
    }
 
-   // At least one saloon (for Dutch only)
-   if (cMyCiv == cCivDutch)
-   {
+   // At least one saloon (for Dutch only) why if there is some good mercenaries
+   //if (cMyCiv == cCivDutch)
+   //{
       planID = aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeSaloon);
       if ( (planID < 0) && (kbUnitCount(cMyID, cUnitTypeSaloon, cUnitStateAlive) < 1) )
       {     // Start a new one
          createSimpleBuildPlan(cUnitTypeSaloon, 1, 60, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 1);
          aiEcho("Starting a new saloon build plan.");
       }
-   }
+   //}
 
    // 5 additional war huts for Iroquois, for a total of 9 (low priority)
    if (cMyCiv == cCivXPIroquois)
@@ -9905,6 +10079,7 @@ minInterval 10
 
 	//echoMessage("Shrine enabled");
    // Use shrine wagons
+   /*
    if ((kbUnitCount(cMyID, cUnitTypeypShrineWagon, cUnitStateAlive) > 0) && (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypShrineJapanese) < 0))
    {  createSimpleBuildPlan(cUnitTypeypShrineJapanese, 1, 100, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);  }
 
@@ -9913,7 +10088,7 @@ minInterval 10
       createSimpleBuildPlan(cUnitTypeypShrineJapanese, 1, 93, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 1);
       aiEcho("Starting a new shrine build plan.");       
    }
-
+*/
    // Cycle through resource generation options
    static int shrineTactic = -1;
    
@@ -10509,6 +10684,147 @@ int getMapID(void)
       }
    }
    return(-1);
+}
+
+
+//Awesome Patch for shitty api missing explorer knockout check.... I USED IGNOREKNOCKOUT!
+int arrDeadExplorer=-1;
+int arrDeadExplorerVec=-1;
+int nDeadExplorer=0;
+
+void dieExplorer(int targetID=-1){
+	if (kbUnitIsType(targetID,cUnitTypeHero)){
+		xsArraySetInt(arrDeadExplorer,nDeadExplorer,targetID);
+		xsArraySetVector(arrDeadExplorer,nDeadExplorer,kbUnitGetPosition(targetID));
+		nDeadExplorer=nDeadExplorer+1;
+	}
+}
+bool isDeadExplorer(int ID=-1){//for engage judgement.
+	int i=0;
+	for(i=0;<nDeadExplorer)
+		if (xsArrayGetInt(arrDeadExplorer,i)==ID)
+			return (true);
+	return (false);
+}
+bool isExplorerDead(int ID=-1,int ref=-1){//Don't know if dead...
+	int i=0;
+	for(i=0;<nDeadExplorer)
+		if (xsArrayGetInt(arrDeadExplorer,i)==ID)
+			return (true);
+	if (distance(kbUnitGetPosition(ID),kbUnitGetPosition(ref))<1 && 
+		kbUnitGetTargetUnitID(ref)==-1 &&
+		kbUnitGetTargetUnitID(ID)==-1
+	){
+		xsArraySetInt(arrDeadExplorer,nDeadExplorer,ID);
+		xsArraySetVector(arrDeadExplorer,nDeadExplorer,kbUnitGetPosition(ID));
+		nDeadExplorer=nDeadExplorer+1;
+		return (true);
+	}
+	return(false);
+}
+
+rule CheckExplorerDead
+active
+minInterval 1
+{
+	//if explorer has moved it's position more then 3(in case of height change...), then he's revived... or he has a target.
+	int i=0;
+	while(i<nDeadExplorer){
+		vector vec=xsArrayGetVector(arrDeadExplorer,i);
+		int ID=xsArrayGetInt(arrDeadExplorer,i);
+		if (distance(vec,kbUnitGetPosition(ID))>3 || kbUnitGetTargetUnitID(ID)!=-1){
+			xsArraySetInt(arrDeadExplorer,i,xsArrayGetInt(arrDeadExplorer,nDeadExplorer));
+			xsArraySetVector(arrDeadExplorer,i,xsArrayGetVector(arrDeadExplorer,nDeadExplorer));
+			nDeadExplorer=nDeadExplorer-1;
+		}
+		i=i+1;
+	}
+}
+
+bool isUnitDead(int targetID=-1,int ref=-1){
+	return 
+		(
+			(kbUnitGetHealth(targetID)==0) ||
+			(kbUnitIsType(targetID,cUnitTypeHero) && isExplorerDead(targetID,ref))
+		);
+}
+
+void updateMicroOps(void){
+	int i=0;
+	string tmp="";
+	while(i<nEngaged){
+		int unitID=xsArrayGetInt(arrEngaged,i);
+		int targetID=xsArrayGetInt(arrEngagedTarget,i);
+		
+		if (kbUnitGetHealth(unitID)==0) {
+			dengage(i);
+			dieExplorer(targetID);
+			tmp=tmp+"Dead"+unitID+",";
+			continue;
+		}
+		
+		vector vecUnit=kbUnitGetPosition(unitID);
+		vector vecTarget=kbUnitGetPosition(targetID);
+		
+		
+		if (kbUnitIsType(unitID,cUnitTypeAbstractVillager)){
+			if (isUnitDead(targetID,unitID)){ //fuck... the... explorer...
+				dengage(i);
+				tmp=tmp+"Done\n";
+				continue;
+			}
+			if (kbUnitGetPlanID(unitID)>0) {
+				tmp=tmp+"Planed\n";
+				dengage(i);
+				continue; //Damn there is a building to build...
+			}
+			if (distance(vecUnit,vecTarget)>18){
+				tmp=tmp+"WentFar\n";
+				dengage(i);
+				continue;
+			}
+			int tmpEID=getClosestUnitByLocation(cUnitTypeLogicalTypeLandMilitary,cPlayerRelationEnemyNotGaia,cUnitStateAlive,vecUnit);
+			if (tmpEID!=targetID && distance(vecUnit,kbUnitGetPosition(tmpEID))<2){
+				aiTaskUnitWork(unitID,tmpEID);
+				xsArraySetInt(arrEngagedTarget,i,tmpEID);
+				tmp=tmp+"ChangeTarget\n";
+			}
+			else if (distance(vecUnit,vecTarget)<=1.8){
+				tmp=tmp+"Melee"+vecTarget+","+vecUnit+",";
+				aiTaskUnitWork(unitID,targetID);
+				updateAux(i,xsGetTime());
+			}
+			else if (kbUnitGetHealth(unitID)<0.3){
+				tmp=tmp+"RunAway";
+				vector run=getFleeVec(vecUnit);
+				if (run==cInvalidVector){
+					dengage(i);
+				}else
+				aiTaskUnitMove(unitID,);
+			}
+			else if (xsGetTime()-getAux(i)<3000){ //not recharged, go on for melee.
+				tmp=tmp+"Closeup"+(xsGetTime()-getAux(i))+",";
+				aiTaskUnitMove(unitID,vecTarget);
+			}
+			else {
+				tmp=tmp+"Shot";
+				aiTaskUnitWork(unitID,targetID);
+				updateAux(i,xsGetTime());
+			}
+		}
+		
+		tmp=tmp+"("+unitID+","+kbGetUnitTypeName(kbGetUnitBaseTypeID(targetID))+":"+distance(vecUnit,vecTarget)+","+")\n";
+		i=i+1;
+	}
+	echoMessage(tmp);
+}
+
+//Engage a sophisticated combat.
+rule microOperation
+active
+minInterval 1
+{
+	updateMicroOps();
 }
 
 //==============================================================================
@@ -13057,12 +13373,22 @@ minInterval 1
 //==============================================================================
 void init(void)
 {
+	arrEngaged=xsArrayCreateInt(300,-2,"EngagedUnit");
+	arrEngagedTarget=xsArrayCreateInt(300,-7,"EngagedUnitTarget");
+	arrEngagedAux=xsArrayCreateFloat(300,-9,"EngagedUnitAux");
+	arrDeadExplorer=xsArrayCreateInt(20,-9,"DeadExplorer");
+	arrDeadExplorerVec=xsArrayCreateVector(20,cInvalidVector,"DeadExplorerPos");
+	nEngaged=0;
+	
    //Set the Explore Danger Threshold.
    aiSetExploreDangerThreshold(110.0);
 
+   
    // Set the gIAmCaptain bool and gCaptainPlayerNumber vars.
    selectCaptain();  
 
+   
+   
    //Setup the resign handler
    aiSetHandler("resignHandler", cXSResignHandler);
 
@@ -13215,7 +13541,7 @@ void init(void)
    {
       vector unitIDPos = kbUnitGetPosition(unitID);
       vector normalVec = xsVectorNormalize(kbGetMapCenter()-unitIDPos);
-      int offset = 100;
+      int offset = 30;
       gTCSearchVector = unitIDPos + (normalVec * offset);
       
       while (kbAreaGroupGetIDByPosition(gTCSearchVector) != kbAreaGroupGetIDByPosition(unitIDPos) )
@@ -14017,14 +14343,7 @@ minInterval 1
    {  //We are Asian, time to build a wonder
       // Not at deadline...see if we can afford the preferred politician
       politician = chooseAsianWonder();    // Get the specified wonder
-      int wonderBuilders = 0;
 
-      if (aiGetGameMode() == cGameModeDeathmatch)
-	wonderBuilders = 8;
-      else if (kbGetAge() == cAge1)
-	wonderBuilders = 1;
-      else
-	wonderBuilders = 4;
       // Quit if we already have a plan in the works
       if (gAgeUpResearchPlan >= 0)
       {
@@ -14071,7 +14390,7 @@ minInterval 1
 	       if (animalID >= 0)
 		 wonderBuildPlace = kbUnitGetPosition(animalID);              
 	    }
-            gAgeUpResearchPlan = createLocationBuildPlan(specialAgeTech, 1, 100, true, cEconomyEscrowID, wonderBuildPlace, wonderBuilders);
+            gAgeUpResearchPlan = createLocationBuildPlan(specialAgeTech, 1, 100, true, cEconomyEscrowID, wonderBuildPlace, 1);
             aiPlanSetVariableFloat(gAgeUpResearchPlan, cBuildPlanCenterPositionDistance, 0, 300.0);
             aiEcho("<<<<<<<<<<RushBoom + OffenseDefense = "+btRushBoom+" + "+btOffenseDefense+" = "+(btRushBoom+btOffenseDefense));
             aiEcho("Creating plan #"+gAgeUpResearchPlan+" to get age upgrade with wonder "+kbGetProtoUnitName(specialAgeTech));
@@ -16838,6 +17157,8 @@ void resignHandler(int result =-1)
    return;
 }
 
+
+//not used....
 int createTechProgression(int techID = -1, int escrowID = -1, int pri = 50)
 {
    int planID = -1;
@@ -17644,7 +17965,7 @@ void commHandler(int chatID =-1)
    // Spew
    aiEcho(" ");
    aiEcho(" ");
-   aiEcho("***** Incoming communication *****");
+   echoMessage("***** Incoming communication *****");
    aiEcho("From: "+fromID+",  verb: "+verb+",  targetType: "+targetType+",  targetCount: "+targetCount);
    for (i=0; <targetCount)
       aiEcho("        "+xsArrayGetInt(targets, i));
@@ -18229,17 +18550,64 @@ minInterval 10
    
    // Decide on which unit type to use as single scouts
    // If possible, converted guardians or cheap infantry units are used
-   // Decide on which unit type to use as scout
    int scoutType = -1;
-   if (kbUnitCount(cMyID, cUnitTypeAbstractInfantry, cUnitStateAlive) >= 1)
-      scoutType = cUnitTypeAbstractInfantry;
-   else if (kbUnitCount(cMyID, cUnitTypeAbstractCavalry, cUnitStateAlive) >= 1)
-      scoutType = cUnitTypeAbstractCavalry;   
-   else if (kbUnitCount(cMyID, cUnitTypeAbstractNativeWarrior, cUnitStateAlive) >= 1)
-      scoutType = cUnitTypeAbstractNativeWarrior;
+   if (kbUnitCount(cMyID, cUnitTypeGuardian, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeGuardian;
+   else if (kbUnitCount(cMyID, cUnitTypeCrossbowman, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeCrossbowman;
+   else if (kbUnitCount(cMyID, cUnitTypePikeman, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypePikeman;
+   else if (kbUnitCount(cMyID, cUnitTypeStrelet, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeStrelet;
+   else if (kbUnitCount(cMyID, cUnitTypeLongbowman, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeLongbowman;
+   else if (kbUnitCount(cMyID, cUnitTypeMusketeer, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeMusketeer;
+   else if (kbUnitCount(cMyID, cUnitTypexpWarrior, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpWarrior;
+   else if (kbUnitCount(cMyID, cUnitTypexpAenna, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpAenna;
+   else if (kbUnitCount(cMyID, cUnitTypexpTomahawk, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpTomahawk;
+   else if (kbUnitCount(cMyID, cUnitTypexpMacehualtin, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpMacehualtin;
+   else if (kbUnitCount(cMyID, cUnitTypexpPumaMan, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpPumaMan;
+   else if (kbUnitCount(cMyID, cUnitTypexpWarBow, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpWarBow;
+   else if (kbUnitCount(cMyID, cUnitTypexpWarClub, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypexpWarClub;
+   else if (kbUnitCount(cMyID, cUnitTypeSaloonOutlawPistol, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeSaloonOutlawPistol;
+   else if (kbUnitCount(cMyID, cUnitTypeSaloonOutlawRifleman, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeSaloonOutlawRifleman;
+   else if (kbUnitCount(cMyID, cUnitTypeJanissary, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeJanissary;
+   else if (kbUnitCount(cMyID, cUnitTypeypQiangPikeman, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypQiangPikeman;
+   else if (kbUnitCount(cMyID, cUnitTypeypChuKoNu, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypChuKoNu;
+   else if (kbUnitCount(cMyID, cUnitTypeypMonkDisciple, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypMonkDisciple;
+   else if (kbUnitCount(cMyID, cUnitTypeypArquebusier, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypArquebusier;
+   else if (kbUnitCount(cMyID, cUnitTypeypChangdao, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypChangdao;
+   else if (kbUnitCount(cMyID, cUnitTypeypSepoy, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypSepoy;
+   else if (kbUnitCount(cMyID, cUnitTypeypNatMercGurkha, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypNatMercGurkha;
+   else if (kbUnitCount(cMyID, cUnitTypeypRajput, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypRajput;
+   else if (kbUnitCount(cMyID, cUnitTypeypYumi, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypYumi;
+   else if (kbUnitCount(cMyID, cUnitTypeypAshigaru, cUnitStateAlive) >= 1)
+      scoutType = cUnitTypeypAshigaru;
    else
-      scoutType = cUnitTypeLogicalTypeLandMilitary;
+      scoutType = cUnitTypeLogicalTypeValidSharpshoot;
 
+   // First, check the control variable and react appropriately
+   
    if ( cvOkToExplore == true )
    {
       if (aiPlanGetActive(gLandExplorePlan) == false)
@@ -18286,7 +18654,7 @@ minInterval 10
                      case cCivJapanese:
                      {
                         aiPlanAddUnitType(gLandExplorePlan, cUnitTypeypMonkJapanese, 1, 1, 1);
-                        aiPlanAddUnitType(gLandExplorePlan, cUnitTypeypMonkJapanese2, 1, 1, 1);
+                        //aiPlanAddUnitType(gLandExplorePlan, cUnitTypeypMonkJapanese2, 1, 1, 1);
                         break;
                      }
                      default:
@@ -18295,7 +18663,7 @@ minInterval 10
                         break;
                      }
                   }
-                  aiPlanAddUnitType(gLandExplorePlan, scoutType, 1, 6, 10);
+                  aiPlanAddUnitType(gLandExplorePlan, cUnitTypeLogicalTypeValidSharpshoot, 1, 6, 10);
                   aiPlanSetVariableBool(gLandExplorePlan, cExplorePlanOkToGatherNuggets, 0, true);
                   exploreMode = cExploreModeNugget;
                }
@@ -18308,7 +18676,6 @@ minInterval 10
                   else
                   {
                      aiPlanAddUnitType(gLandExplorePlan, scoutType, 1, 1, 1);
-                     aiPlanSetUnitStance(gLandExplorePlan, cUnitStanceDefensive);
                   }
                   aiPlanAddUnitType(gLandExplorePlan, cUnitTypeExplorer, 0, 0, 0);
                   aiPlanAddUnitType(gLandExplorePlan, cUnitTypexpAztecWarchief, 0, 0, 0);
@@ -18329,17 +18696,17 @@ minInterval 10
                      {
                         case cCivXPAztec:
                         {
-                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpAztecWarchief, 1, 1, 1);
+                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpAztecWarchief, 1, 1, 1);
                            break;
                         }
                         case cCivXPIroquois:
                         {
-                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpIroquoisWarChief, 1, 1, 1);
+                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpIroquoisWarChief, 1, 1, 1);
                            break;
                         }
                         case cCivXPSioux:
                         {
-                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpLakotaWarchief, 1, 1, 1);
+                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpLakotaWarchief, 1, 1, 1);
                            break;
                         }
                         case cCivChinese:
@@ -18356,7 +18723,7 @@ minInterval 10
                         case cCivJapanese:
                         {
                            aiPlanAddUnitType(gExplorerControlPlan, cUnitTypeypMonkJapanese, 1, 1, 1);
-                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypeypMonkJapanese2, 1, 1, 1);
+                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypeypMonkJapanese2, 1, 1, 1); some one has to build shrine...
                            break;
                         }
                         default:
@@ -18374,8 +18741,6 @@ minInterval 10
                      aiPlanSetVariableInt(gExplorerControlPlan, cDefendPlanRefreshFrequency, 0, 30);
                      aiPlanSetVariableInt(gExplorerControlPlan, cDefendPlanAttackTypeID, 0, cUnitTypeUnit); // Only units
                      aiPlanSetDesiredPriority(gExplorerControlPlan, 90);    // Quite high, don't suck him into routine attack plans, etc.
-                     if (kbGetCiv() == cCivJapanese)
-			aiPlanSetDesiredPriority(gExplorerControlPlan, 10);
                      aiPlanSetActive(gExplorerControlPlan);      
                   }     
                }
@@ -18396,8 +18761,8 @@ minInterval 10
             // Check to see if we're out of time, and switch to single-unit exploring if we are.
             if (age2Time >= 0)
             {
-               if ((((xsGetTime() - age2Time) > 180000) && (aiPlanGetState(gLandExplorePlan) != cPlanStateClaimNugget) ) ||
-                   ((xsGetTime() - age2Time) > 60000) )     // we've been in age 2 > 3 minutes, or > 3 minutes and not in gathering mode
+               if (( ((xsGetTime() - age2Time) > 180000) && (aiPlanGetState(gLandExplorePlan) != cPlanStateClaimNugget) ) ||
+                   ((xsGetTime() - age2Time) > 300000) )     // we've been in age 2 > 5 minutes, or > 3 minutes and not in gathering mode
 
                {  // Switch to a normal explore plan, create explorer control plan, enable local nugget gathering
                   if (gExplorerControlPlan < 0)
@@ -18407,17 +18772,17 @@ minInterval 10
                      {
                         case cCivXPAztec:
                         {
-                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpAztecWarchief, 1, 1, 1);
+                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpAztecWarchief, 1, 1, 1);
                            break;
                         }
                         case cCivXPIroquois:
                         {
-                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpIroquoisWarChief, 1, 1, 1);
+                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpIroquoisWarChief, 1, 1, 1);
                            break;
                         }
                         case cCivXPSioux:
                         {
-                           //aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpLakotaWarchief, 1, 1, 1);
+                           aiPlanAddUnitType(gExplorerControlPlan, cUnitTypexpLakotaWarchief, 1, 1, 1);
                            break;
                         }
                         case cCivChinese:
@@ -18452,8 +18817,6 @@ minInterval 10
                      aiPlanSetVariableInt(gExplorerControlPlan, cDefendPlanRefreshFrequency, 0, 30);
                      aiPlanSetVariableInt(gExplorerControlPlan, cDefendPlanAttackTypeID, 0, cUnitTypeUnit); // Only units
                      aiPlanSetDesiredPriority(gExplorerControlPlan, 90);    // Quite high, don't suck him into routine attack plans, etc.
-                     if (kbGetCiv() == cCivJapanese)
-			aiPlanSetDesiredPriority(gExplorerControlPlan, 10);
                      aiPlanSetActive(gExplorerControlPlan);     
                      xsEnableRule("localNuggetGathering"); 
                   }
@@ -18496,7 +18859,6 @@ minInterval 10
                else
                {
                   aiPlanAddUnitType(gLandExplorePlan, scoutType, 1, 1, 1);
-                  aiPlanSetUnitStance(gLandExplorePlan, cUnitStanceDefensive);
                }
                aiPlanSetNoMoreUnits(gLandExplorePlan, false);
                aiPlanSetVariableInt(gLandExplorePlan, cExplorePlanNumberOfLoops, 0, 0);
@@ -18532,80 +18894,8 @@ minInterval 10
    {
       aiPlanSetActive(gLandExplorePlan, false);
    }
-   //////find an enemy's resource site to attack villagers///////
-   int enemyID = aiGetMostHatedPlayerID();
-   vector enemyMainBaseLocation = kbBaseGetLocation(enemyID, kbBaseGetMainID(enemyID));
-   int resourceType = -1;
-   int randomizer = aiRandInt(6);
-   if (randomizer <= 1 + kbGetAge())
-     resourceType = cUnitTypeMine;
-   else 
-     resourceType = cUnitTypeHuntable;
-   float maxRange = 50 * kbGetAge() + 200.0;
-
-   static int enemyResourceQuery = -1;
-   if (enemyResourceQuery < 0)
-   {
-     enemyResourceQuery = kbUnitQueryCreate("Enemy's Resource Query");
-     kbUnitQuerySetIgnoreKnockedOutUnits(enemyResourceQuery, true);
-     kbUnitQuerySetState(enemyResourceQuery, cUnitStateAlive);
-     kbUnitQuerySetPlayerID(enemyResourceQuery, 0);
-   }
-   kbUnitQuerySetUnitType(enemyResourceQuery, resourceType);
-   kbUnitQuerySetPosition(enemyResourceQuery, enemyMainBaseLocation);
-   kbUnitQuerySetMaximumDistance(enemyResourceQuery, maxRange);
-   kbUnitQueryResetResults(enemyResourceQuery);
-   int resourceCount = kbUnitQueryExecute(enemyResourceQuery);
-   int recourceID = -1;
-   vector resourceLocation = cInvalidVector;
-   int mainAreaGroup = kbAreaGroupGetIDByPosition(kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID)));
-   int resourceAreaGroup = -1;
-   bool found = false;
-   int numStart = aiRandInt(resourceCount);
-   int j = 0;
-   int i = 0;
-   for (j=numStart; < numStart + resourceCount)
-   {
-      if (j > resourceCount)
-        i = j - resourceCount;
-      else
-	i = j;
-      recourceID = kbUnitQueryGetResult(enemyResourceQuery, i);
-      resourceLocation = kbUnitGetPosition(recourceID);
-      resourceAreaGroup =  kbAreaGroupGetIDByPosition(resourceLocation);
-      if ( (distance(enemyMainBaseLocation, resourceLocation) > 70.0) && (resourceAreaGroup == mainAreaGroup) )
-      {
-	 found = true;
-	 break;
-      }
-   }      
-   if (found == false)
-     return;
-   //////find an enemy's resource site to attack///////
-
-   if (aiPlanGetNumber(cPlanExplore, -1, true) < 3)
-   {
-      int resourceExplorePlan = aiPlanCreate("resourceExplorePlan", cPlanExplore);
-      aiPlanSetDesiredPriority(resourceExplorePlan, 75);     
-      aiPlanAddUnitType(resourceExplorePlan, scoutType, 1, 1, 1);           
-      aiPlanSetUnitStance(resourceExplorePlan, cUnitStanceAggressive);
-      aiPlanAddWaypoint(resourceExplorePlan, resourceLocation);
-      aiPlanSetVariableBool(resourceExplorePlan, cExplorePlanDoLoops, 0, false);
-      aiPlanSetVariableInt(resourceExplorePlan, cExplorePlanNumberOfLoops, 0, -1);
-      aiPlanSetVariableBool(resourceExplorePlan, cExplorePlanAvoidingAttackedAreas, 0, true);
-      aiPlanSetRequiresAllNeedUnits(resourceExplorePlan, true);
-      aiPlanSetActive(resourceExplorePlan);
-      aiEcho("start a new resourceExplorePlan");
-      return;
-   }
-   if (((resourceExplorePlan >= 0) && (aiPlanGetActive(resourceExplorePlan) == false))||
-       ((resourceExplorePlan >= 0) && (aiPlanGetState(resourceExplorePlan) < 0))|| 
-       (getUnitCountByLocation(cUnitTypeLogicalTypeLandMilitary, cMyID, cUnitStateAlive, resourceLocation, 15.0) > 0))
-   {
-      aiPlanDestroy(resourceExplorePlan);
-      resourceExplorePlan = -1;
-   }
 }
+
 
 
 
@@ -18624,13 +18914,31 @@ minInterval 10
 
 
 void missionStartHandler(int missionID = -1)
-{  // Track times for mission starts, so we can tell how long its been since
+{  
+
+//it lacks flexibility... considering delete it!
+
+// Track times for mission starts, so we can tell how long its been since
    // we had a mission of a given type.
    if (missionID < 0)
       return;
    
    int oppID = aiPlanGetVariableInt(missionID, cMissionPlanOpportunityID, 0);
    int oppType = aiGetOpportunityType(oppID);
+/*	
+	
+	string tmp=(missionID+":"+aiPlanGetName(missionID)+"\n"+aiPlanGetType(missionID)+" "+aiPlanGetState(missionID)+" %%:"+aiPlanGetNumberUnits(missionID,gEconUnit));
+	bool debug=false;
+	if (oppType==cOpportunityTypeClaim){
+		tmp=tmp+aiPlanSetActive(missionID,false)+",";
+		tmp=tmp+aiPlanAddUnitType(missionID,gEconUnit,0,1,1)+",";
+		tmp=tmp+aiPlanAddUnitType(missionID,gExplorerUnit,1,1,1)+",";
+		tmp=tmp+aiPlanAddUnit(missionID,getUnit(gEconUnit))+",";
+		tmp=tmp+aiPlanSetNoMoreUnits(missionID,true)+",";
+		tmp=tmp+aiPlanSetActive(missionID,true);
+	}
+	echoMessage(tmp);
+   */
    
    aiPlanSetVariableInt(missionID, cMissionPlanStartTime, 0, xsGetTime()); // Set the start time in ms.
    
@@ -18776,6 +19084,32 @@ float getBaseEnemyStrength(int baseID = -1)
    return(retVal);
 }
 
+float getlocHP(vector loc = cInvalidVector,float radius=20.0,int relation=cPlayerRelationEnemyNotGaia,int Type=cUnitTypeLogicalTypeLandMilitary){
+   float retVal = 0.0;
+   static int enemyPointQuery = -1;
+  
+   if (enemyPointQuery < 0)
+   {
+      enemyPointQuery = kbUnitQueryCreate("HP query");
+      kbUnitQuerySetIgnoreKnockedOutUnits(enemyPointQuery, true);
+   }
+
+   if (enemyPointQuery!=-1){
+      kbUnitQuerySetPlayerRelation(enemyPointQuery, relation);
+      kbUnitQuerySetState(enemyPointQuery, cUnitStateAlive);
+      kbUnitQuerySetUnitType(enemyPointQuery, Type);
+	   kbUnitQuerySetPosition(enemyPointQuery, loc);
+	   kbUnitQuerySetMaximumDistance(enemyPointQuery, radius);
+	   kbUnitQueryResetResults(enemyPointQuery);
+	}
+	else return(-1);
+   int n=kbUnitQueryExecute(enemyPointQuery);
+   int i=0;
+   for(i=0; <n){
+	  retVal=retVal+getRelativeVillagerHP(kbUnitQueryGetResult(enemyPointQuery,i));
+   }
+   return (retVal);
+}
 
 // Calculate an approximate strength rating for the enemy units/buildings near this point.
 float getPointEnemyStrength(vector loc = cInvalidVector)
@@ -19103,15 +19437,15 @@ void scoreOpportunity(int oppID = -1)
    */
    	
    // Interim values for the scoring components:
-   int  permission = 0; 
+   int   permission = 0; 
    float instance = 0.0;
    float classRating = 0.0;
    float total = 0.0;
    float affordable = 0.0;
-   float score = 0.0;
+	float score = 0.0;
    
    // Info about this opportunity
-   int source = aiGetOpportunitySourceType(oppID);
+   int   source = aiGetOpportunitySourceType(oppID);
    if (source < 0) 
       source = cOpportunitySourceAutoGenerated;
    if (source > cOpportunitySourceTrigger)
@@ -19120,7 +19454,6 @@ void scoreOpportunity(int oppID = -1)
    int targetType = aiGetOpportunityTargetType(oppID);
    int oppType = aiGetOpportunityType(oppID);
    int targetPlayer = aiGetOpportunityTargetPlayerID(oppID);
-   int mostHatedPlayerID = aiGetMostHatedPlayerID(); // Get to the most hated player to attack
    vector location = aiGetOpportunityLocation(oppID);
    float radius = aiGetOpportunityRadius(oppID);
    if (radius < 40.0)
@@ -19170,7 +19503,7 @@ void scoreOpportunity(int oppID = -1)
    }
 
    //-- get the number of units in our reserve.
-   armySizeAuto = aiPlanGetNumberUnits(gLandReservePlan, cUnitTypeLogicalTypeLandMilitary);
+	armySizeAuto = aiPlanGetNumberUnits(gLandReservePlan, cUnitTypeLogicalTypeLandMilitary);
    armySizeAlly = armySizeAuto;
    armySizeTrigger = armySizeAlly;
    
@@ -19183,7 +19516,6 @@ void scoreOpportunity(int oppID = -1)
       case cOpportunityTargetTypeBase:
       {
          location = kbBaseGetLocation(kbBaseGetOwner(target),target);
-         //loc = kbBaseGetLocation(mostHatedPlayerID, kbBaseGetMainID(mostHatedPlayerID));
          tradePostID = getUnitByLocation(cUnitTypeTradingPost, kbBaseGetOwner(target), cUnitStateAlive, location, 40.0);   
          KOTHID = getUnitByLocation(cUnitTypeypKingsHill, kbBaseGetOwner(target), cUnitStateAlive);//, location, 40.0);   
          radius = 50.0;
@@ -19199,9 +19531,7 @@ void scoreOpportunity(int oppID = -1)
          if ( (gIsMonopolyRunning == true) && (tradePostID >= 0) )
             baseAssets = baseAssets + 10000; // Huge bump if this is a trade post (enemy or ally) and a monopoly is running            
          if ( (gIsKOTHRunning == true) && (KOTHID >= 0) )
-            baseAssets = baseAssets + 10000; // Huge bump if this is the hill (enemy or ally) and a timer is running 
-         if (mostHatedPlayerID >= 0) 
-            baseAssets = baseAssets + 15000;         
+            baseAssets = baseAssets + 10000; // Huge bump if this is the hill (enemy or ally) and a timer is running             
          break;
       }
       case cOpportunityTargetTypePointRadius:
@@ -19281,8 +19611,6 @@ void scoreOpportunity(int oppID = -1)
                affordable = 0.8 + ((affordRatio - 2.0) / 15.0); // 2.0 -> 0.8 and 5.0 -> 1.0
             if (affordable > 1.0)
                affordable = 1.0;
-            //if (mostHatedPlayerID > 0)
-               //affordable = 1.0;
          }  // Affordability is done
             
          // Check target value, calculate INSTANCE score.
@@ -19299,24 +19627,20 @@ void scoreOpportunity(int oppID = -1)
          instance = (0.8 * baseAssets) / 2000.0;
          // Over 2000, adjust so 2K = 0.8, 30K = 1.0
          if (baseAssets > 2000.0)
-            instance = 1.0;
-            //instance = 0.8 + ( (0.2 * (baseAssets - 2000.0)) / 8000.0);
+            instance = 0.8 + ( (0.2 * (baseAssets - 2000.0)) / 8000.0);
          
          // Instance is now 0..1, adjust for distance. If < 100m, leave as is.  Over 100m to 400m, penalize 10% per 100m.
          float penalty = 0.0;
-         /*if (oppDistance > 100.0)
+         if (oppDistance > 100.0)
             penalty = (0.1 * (oppDistance - 100.0)) / 100.0;
          if (penalty > 0.6)
             penalty = 0.6;
          instance = instance * (1.0 - penalty); // Apply distance penalty, INSTANCE score is done.
-         */
          if (sameAreaGroup = false)
-            instance = instance / 2.0;         
+            instance = instance / 2.0;
          if (targetType == cOpportunityTargetTypeBase)
-         {   
             if (kbHasPlayerLost(baseOwner) == true)
                instance = -1.0;
-         }
          // Illegal if it's over water, i.e. a lone dock
          if (kbAreaGetType(kbAreaGetIDByPosition(location)) == cAreaTypeWater)
             instance = -1.0;
@@ -19324,13 +19648,12 @@ void scoreOpportunity(int oppID = -1)
          // Check for weak target blocks, which means the content designer is telling us that this target needs its instance score bumped up
          int weakBlockCount = 0;
          int strongBlockCount = 0;
-         
          if ( targetType == cOpportunityTargetTypeBase)
          {
-            weakBlockCount = getUnitCountByLocation(cUnitTypeAITargetBlockWeak, cMyID, cUnitStateAlive, kbBaseGetLocation(baseOwner, target), 2000.0); 
-            strongBlockCount = getUnitCountByLocation(cUnitTypeAITargetBlockStrong, cMyID, cUnitStateAlive, kbBaseGetLocation(baseOwner, target), 2000.0);
+            weakBlockCount = getUnitCountByLocation(cUnitTypeAITargetBlockWeak, cMyID, cUnitStateAlive, kbBaseGetLocation(baseOwner, target), 40.0);
+            strongBlockCount = getUnitCountByLocation(cUnitTypeAITargetBlockStrong, cMyID, cUnitStateAlive, kbBaseGetLocation(baseOwner, target), 40.0);
          }
-         if ( (targetType == cOpportunityTargetTypeBase) || (weakBlockCount > 0) || (instance >= 0.0) )
+         if ( (targetType == cOpportunityTargetTypeBase) && (weakBlockCount > 0) && (instance >= 0.0) )
          {  // We have a valid instance score, and there is at least one weak block in the area.  For each weak block, move the instance score halfway to 1.0.
             while (weakBlockCount > 0)
             {
@@ -19358,14 +19681,11 @@ void scoreOpportunity(int oppID = -1)
          if ( ( attackingKOTH == true) && (KOTHID >= 0) )  // We're attacking, and this is an enemy hill...go get it
             classRating = 1.0;
 
-         /*if (mostHatedPlayerID > 0) // this is an enemy.....go get it
-            classRating = 1.0;*/
-
-         if ( (targetType == cOpportunityTargetTypeBase) || (strongBlockCount > 0) || (classRating >= 0.0) )
+         if ( (targetType == cOpportunityTargetTypeBase) && (strongBlockCount > 0) && (classRating >= 0.0) )
          {  // We have a valid instance score, and there is at least one strong block in the area.  For each weak block, move the classRating score halfway to 1.0.
             while (strongBlockCount > 0)
             {
-               classRating = 1.0;   // 1.0 is perfect
+               classRating = classRating + ((1.0-classRating) / 2.0);   // halfway up to 1.0
                strongBlockCount--;
             }
          }
@@ -19377,6 +19697,8 @@ void scoreOpportunity(int oppID = -1)
       }
       case cOpportunityTypeClaim:
       {
+		//i really don't agree to permit this...
+		permission=cOpportunitySourceTrigger;
          // Check permissions required.
          if( (cvOkToClaimTrade == false) && (kbVPSiteGetType(target) == cVPTrade) )
             permission = cOpportunitySourceTrigger;   // Only triggers can let us override this.
@@ -19386,33 +19708,28 @@ void scoreOpportunity(int oppID = -1)
             permission = cOpportunitySourceTrigger;   // Only triggers can override this difficulty setting.
          
          // Check affordability.  50-50 weight on military affordability and econ affordability
-         //float milAfford = 0.0;
+         float milAfford = 0.0;
          float econAfford = 0.0;
-         /*affordRatio = armySize / netEnemyPower;
-         if (affordRatio < 2.0)
-           milAfford = affordRatio / 2.5;  // 0 -> 0.0,  2.0 -> 0.8
-         else
-           milAfford = 0.8 + ((affordRatio - 2.0) / 15.0); // 2.0 -> 0.8 and 5.0 -> 1.0
-         if (milAfford > 1.0)
-           milAfford = 1.0; */
-
-         if (aiGetGameMode() == cGameModeDeathmatch)  //DM jump-start
-           affordRatio = kbUnitCostPerResource(cUnitTypeTradingPost, cResourceWood);
-         if ( (kbResourceGet(cResourceWood) >= 400) && (aiGetGameMode() != cGameModeDeathmatch) )
-           affordRatio = kbUnitCostPerResource(cUnitTypeTradingPost, cResourceWood);
-
-         /*if (affordRatio < 1.0)
-           econAfford = affordRatio;
-         else
-           econAfford = 1.0;
-         if (econAfford > 1.0)
-           econAfford = 1.0;      
-         if (econAfford < 0.0)
-           econAfford = 0.0;*/
-         affordable = affordRatio; // Simple average
+         affordRatio = armySize / netEnemyPower;
+            if (affordRatio < 2.0)
+               milAfford = affordRatio / 2.5;  // 0 -> 0.0,  2.0 -> 0.8
+            else
+               milAfford = 0.8 + ((affordRatio - 2.0) / 15.0); // 2.0 -> 0.8 and 5.0 -> 1.0
+            if (milAfford > 1.0)
+               milAfford = 1.0; 
+         affordRatio = (kbEscrowGetAmount(cRootEscrowID, cResourceWood) + kbEscrowGetAmount(cEconomyEscrowID, cResourceWood)) / (1.0 + kbUnitCostPerResource(cUnitTypeTradingPost, cResourceWood));
+            if (affordRatio < 1.0)
+               econAfford = affordRatio;
+            else
+               econAfford = 1.0;
+            if (econAfford > 1.0)
+               econAfford = 1.0;      
+            if (econAfford < 0.0)
+               econAfford = 0.0;
+         affordable = (econAfford + milAfford) / 2.0; // Simple average
          
          // Instance
-         instance = 1.0;   // Same for all, unless I prefer to do one type over other (personality)
+         instance = 0.8;   // Same for all, unless I prefer to do one type over other (personality)
          penalty = 0.0;
          if (oppDistance > 100.0)
             penalty = (0.1 * (oppDistance - 100.0)) / 100.0;
@@ -19495,10 +19812,9 @@ void scoreOpportunity(int oppID = -1)
          if (sameAreaGroup == false)
             instance = 0.0;
          if (targetType == cOpportunityTargetTypeBase)
-         {   
             if (kbHasPlayerLost(baseOwner) == true)
-              instance = -1.0;
-         }       
+               instance = -1.0;
+                 
          if ( (defendingMonopoly == true) && (tradePostID >= 0) && (instance > 0.0))
             instance = instance + ((1.0 - instance)/1.2);   // Bump it almost up to 1.0 if we're defending monopoly and this is a trade site.
          if ( (defendingKOTH == true) && (KOTHID >= 0) && (instance > 0.0))
@@ -19528,8 +19844,37 @@ void scoreOpportunity(int oppID = -1)
    }
    
    score = classRating * instance * affordable;
-// aiEcho("Class "+classRating+", Instance "+instance+", affordable "+affordable);
-// aiEcho("Final Score: "+score);
+//   aiEcho("    Class "+classRating+", Instance "+instance+", affordable "+affordable);
+//   aiEcho("    Final Score: "+score);
+
+   switch(oppType)
+   {
+      case cOpportunityTypeDestroy:  // Aggressive AIs attack more often
+      {
+         score = score + (0.2 * btOffenseDefense); // If -0.5 -> score - 0.1. If -1.0 -> score - 0.2. If 0.5 -> score + 0.1. If 1.0 -> score + 0.2
+      }
+   }
+   switch(oppType)
+   {
+      case cOpportunityTypeDefend:  // Defensive AIs defend ally bases
+      {
+         score = score + (0.2 * btOffenseDefense); // If -0.5 -> score + 0.1. If -1.0 -> score + 0.2. If 0.5 -> score - 0.1. If 1.0 -> score - 0.2
+      }
+   }
+   switch(oppType)
+   {
+      case cOpportunityTypeClaim:  // Claiming AIs build more Trading Posts
+      {
+         if (kbVPSiteGetType(target) == cVPTrade) 
+         {
+            score = score + (0.2 * btBiasTrade); // If -0.5 -> score - 0.1. If -1.0 -> score - 0.2. If 0.5 -> score + 0.1. If 1.0 -> score + 0.2
+         }
+         if (kbVPSiteGetType(target) == cVPNative) 
+         {
+            score = score + (0.2 * btBiasNative); // If -0.5 -> score - 0.1. If -1.0 -> score - 0.2. If 0.5 -> score + 0.1. If 1.0 -> score + 0.2
+         }
+      }
+   }
    
    if (score > 1.0)
       score = 1.0;
@@ -19546,6 +19891,7 @@ void scoreOpportunity(int oppID = -1)
       score = -1.0;
    aiSetOpportunityScore(oppID, permission, affordable, classRating, instance, score);
 }
+
 
 
 //==============================================================================
@@ -20362,10 +20708,11 @@ minInterval 5
 //==============================================================================
 void main(void)
 { 
+	
    aiEcho("Main is starting.");
    aiEcho("Game type is "+aiGetGameType()+", 0=Scn, 1=Saved, 2=Rand, 3=GC, 4=Cmpgn");
    aiEcho("Map name is "+cRandomMapName);
-   
+   //xsSetContextPlayer(1);
    ////////////////Introduction////////////////
    int Player = -1; 
    int firstNonHumanplayer = -1;
@@ -20378,13 +20725,14 @@ void main(void)
         break;
       }
    }
+   /*
    if (cMyID == firstNonHumanplayer )
    {
       for (Player = 1; <cNumberPlayers)
       {  
          aiChat(Player, "AI changes made by SkyTeam,\nThis uses Felix Hermansson's Drauger AI as a base, but has\nvaried improvements. oh and artheru!");          
       }
-   }
+   }*/
    ////////////////Introduction////////////////
 
    initArrays();              // Create the global arrays
@@ -22191,6 +22539,46 @@ minInterval 60
    }
 
    // Get upgrades one at a time as they become available
+   if (kbTechGetStatus(cTechImpLargeScaleAgriculture) == cTechStatusObtainable)
+   {
+      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpLargeScaleAgriculture);
+      if (upgradePlanID >= 0)
+         aiPlanDestroy(upgradePlanID);
+      createSimpleResearchPlan(cTechImpLargeScaleAgriculture, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
+      return;
+   }
+   if (kbTechGetStatus(cTechImpExcessiveTaxation) == cTechStatusObtainable)
+   {
+      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpExcessiveTaxation);
+      if (upgradePlanID >= 0)
+         aiPlanDestroy(upgradePlanID);
+      createSimpleResearchPlan(cTechImpExcessiveTaxation, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
+      return;
+   }
+   if (kbTechGetStatus(cTechImpDeforestation) == cTechStatusObtainable)
+   {
+      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpDeforestation);
+      if (upgradePlanID >= 0)
+         aiPlanDestroy(upgradePlanID);
+      createSimpleResearchPlan(cTechImpDeforestation, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
+      return;
+   }
+   if (kbTechGetStatus(cTechImpLegendaryNatives) == cTechStatusObtainable)
+   {
+      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpLegendaryNatives);
+      if (upgradePlanID >= 0)
+         aiPlanDestroy(upgradePlanID);
+      createSimpleResearchPlan(cTechImpLegendaryNatives, getUnit(cUnitTypeCapitol), cMilitaryEscrowID, 50);
+      return;
+   }
+   if (kbTechGetStatus(cTechImpImmigrants) == cTechStatusObtainable)
+   {
+      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpImmigrants);
+      if (upgradePlanID >= 0)
+         aiPlanDestroy(upgradePlanID);
+      createSimpleResearchPlan(cTechImpImmigrants, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
+      return;
+   }
    if (kbTechGetStatus(cTechImpKnighthood) == cTechStatusObtainable)
    {
       upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpKnighthood);
@@ -22205,46 +22593,6 @@ minInterval 60
       if (upgradePlanID >= 0)
          aiPlanDestroy(upgradePlanID);
       createSimpleResearchPlan(cTechImpPeerage, getUnit(cUnitTypeCapitol), cMilitaryEscrowID, 50);
-      return;
-   }
-   if (kbTechGetStatus(cTechImpLargeScaleAgriculture) == cTechStatusObtainable)
-   {
-      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpLargeScaleAgriculture);
-      if (upgradePlanID >= 0)
-         aiPlanDestroy(upgradePlanID);
-      createSimpleResearchPlan(cTechImpLargeScaleAgriculture, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
-      return;
-   }
-   if (kbTechGetStatus(cTechImpDeforestation) == cTechStatusObtainable)
-   {
-      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpDeforestation);
-      if (upgradePlanID >= 0)
-         aiPlanDestroy(upgradePlanID);
-      createSimpleResearchPlan(cTechImpDeforestation, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
-      return;
-   }
-   if (kbTechGetStatus(cTechImpExcessiveTaxation) == cTechStatusObtainable)
-   {
-      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpExcessiveTaxation);
-      if (upgradePlanID >= 0)
-         aiPlanDestroy(upgradePlanID);
-      createSimpleResearchPlan(cTechImpExcessiveTaxation, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
-      return;
-   }
-   if (kbTechGetStatus(cTechImpImmigrants) == cTechStatusObtainable)
-   {
-      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpImmigrants);
-      if (upgradePlanID >= 0)
-         aiPlanDestroy(upgradePlanID);
-      createSimpleResearchPlan(cTechImpImmigrants, getUnit(cUnitTypeCapitol), cEconomyEscrowID, 50);
-      return;
-   }
-   if (kbTechGetStatus(cTechImpLegendaryNatives) == cTechStatusObtainable)
-   {
-      upgradePlanID = aiPlanGetIDByTypeAndVariableType(cPlanResearch, cResearchPlanTechID, cTechImpLegendaryNatives);
-      if (upgradePlanID >= 0)
-         aiPlanDestroy(upgradePlanID);
-      createSimpleResearchPlan(cTechImpLegendaryNatives, getUnit(cUnitTypeCapitol), cMilitaryEscrowID, 50);
       return;
    }
 }
@@ -23065,97 +23413,6 @@ minInterval 5
       }
    }
 }
-
-/*
-rule slaughterMonitor
-inactive
-group tcComplete
-minInterval 15
-{
-	//i think it's rather... useless...
-return;
-
-	//Find herdables:
-	static int unitQueryID=-1;	//If we don't have the query yet, create one.
-	if (unitQueryID < 0){
-		unitQueryID=kbUnitQueryCreate("miscGetUnitQuery");
-		kbUnitQuerySetIgnoreKnockedOutUnits(unitQueryID, true);
-	}
-	if (unitQueryID!=-1){
-        kbUnitQuerySetPlayerRelation(unitQueryID, -1);
-      	kbUnitQuerySetPlayerID(unitQueryID, cMyID);
-		kbUnitQuerySetUnitType(unitQueryID, cUnitTypeHerdable);
-		kbUnitQuerySetState(unitQueryID, cUnitStateAlive);
-	}
-	kbUnitQueryResetResults(unitQueryID);
-	int vFound=kbUnitQueryExecute(unitQueryID);
-	int index=0;
-	int vid=0;
-	string tmp="";
-	for(index=0; <vFound){
-		vid=kbUnitQueryGetResult(unitQueryID,index);
-		tmp=tmp+"/"+kbUnitGetActionType(vid);
-	}
-	//echoMessage(tmp);
-	return;
-	
-   // Disable rule for Indians and Japanese
-   if ((kbGetCiv() == cCivIndians) || (kbGetCiv() == cCivJapanese))
-   { 
-      xsDisableSelf();
-      return;
-   }
-
-   static int slaughterPlanID = -1;
-   int numCattle = -1;
-   int gatherersWanted = -1;
-   vector homeBaseVec = cInvalidVector;
-
-   // Don't slaughter cattle in the early stages
-   if (( kbGetAge() < cAge3) || (xsGetTime() < 480000) )
-   {
-      return;
-   }
-
-   // If we have a main base, count the number of herdables in it
-   if (kbBaseGetMainID(cMyID) < 0)
-      return;
- 
-   homeBaseVec = kbBaseGetLocation(cMyID, kbBaseGetMainID(cMyID));
-   numCattle = getUnitCountByLocation(cUnitTypeHerdable, cPlayerRelationAny, cUnitStateAny, homeBaseVec, 75.0);
-
-   if (numCattle == 0)
-   {
-      gatherersWanted = 0;
-   }
-   else
-   {
-      gatherersWanted = 3;
-   }
-
-   if (aiPlanGetState(slaughterPlanID) == -1)
-   {
-      aiEcho("Cattle gather plan "+slaughterPlanID+" is invalid.");
-      aiPlanDestroy(slaughterPlanID);
-      slaughterPlanID = -1;
-   }
-   if (slaughterPlanID < 0)
-   {  // Initialize the plan
-      slaughterPlanID = aiPlanCreate("Cattle slaughter", cPlanGather);
-      aiPlanSetBaseID(slaughterPlanID, kbBaseGetMainID(cMyID));
-      aiPlanSetVariableInt(slaughterPlanID, cGatherPlanResourceUnitTypeFilter, 0, cUnitTypeHerdable);
-      aiPlanSetVariableInt(slaughterPlanID, cGatherPlanResourceType, 0, cAllResources);
-      aiPlanAddUnitType(slaughterPlanID, gEconUnit, gatherersWanted, gatherersWanted, 2*gatherersWanted); // 3-6 gatherers if there is cattle
-      aiPlanSetDesiredPriority(slaughterPlanID, 99);
-      aiPlanSetActive(slaughterPlanID);
-      aiEcho("Activated cattle slaughter plan "+slaughterPlanID);
-   }
-   else
-   {
-      aiPlanAddUnitType(slaughterPlanID, gEconUnit, gatherersWanted, gatherersWanted, 2*gatherersWanted); // 3-6 gatherers if there is cattle
-   }
-}
-*/
 
 rule slaughterGoatMonitor
 inactive
@@ -28092,78 +28349,129 @@ minInterval 30
 }
 
 
+//Beautiful Wagon Monitor
+int arrBuilder=-1;
+int arrBuilds=-1;
+int nBB=0; 
+
+void initWagon(){
+arrBuilder=xsArrayCreateInt(23,0,"Builder");
+arrBuilds=xsArrayCreateInt(23,0,"Builder Building");
+nBB=23;
+xsArraySetInt(arrBuilder,0,cUnitTypeBankWagon);
+xsArraySetInt(arrBuilds,0,cUnitTypeBank);
+
+xsArraySetInt(arrBuilder,1,cUnitTypeCoveredWagon);
+xsArraySetInt(arrBuilds,1,cUnitTypeTownCenter);
+
+xsArraySetInt(arrBuilder,2,cUnitTypeFactoryWagon);
+xsArraySetInt(arrBuilds,2,cUnitTypeFactory);
+
+xsArraySetInt(arrBuilder,3,cUnitTypeOutpostWagon);
+xsArraySetInt(arrBuilds,3,cUnitTypeOutpost);
+
+xsArraySetInt(arrBuilder,4,cUnitTypeypArsenalWagon);
+xsArraySetInt(arrBuilds,4,cUnitTypeypArsenalAsian);
+
+xsArraySetInt(arrBuilder,5,cUnitTypeypBankWagon);
+xsArraySetInt(arrBuilds,5,cUnitTypeypBankAsian);
+
+xsArraySetInt(arrBuilder,6,cUnitTypeYPBerryWagon1);
+xsArraySetInt(arrBuilds,6,cUnitTypeypBerryBuilding);
+
+xsArraySetInt(arrBuilder,7,cUnitTypeypBlockhouseWagon);
+xsArraySetInt(arrBuilds,7,cUnitTypeBlockhouse);
+
+xsArraySetInt(arrBuilder,8,cUnitTypeYPCastleWagon);
+xsArraySetInt(arrBuilds,8,cUnitTypeypCastle);
+
+xsArraySetInt(arrBuilder,9,cUnitTypeypChurchWagon);
+xsArraySetInt(arrBuilds,9,cUnitTypeypChurch);
+
+xsArraySetInt(arrBuilder,10,cUnitTypeYPDockWagon);
+xsArraySetInt(arrBuilds,10,cUnitTypeYPDockAsian);
+
+xsArraySetInt(arrBuilder,11,cUnitTypeYPDojoWagon);
+xsArraySetInt(arrBuilds,11,cUnitTypeypDojo);
+
+xsArraySetInt(arrBuilder,12,cUnitTypeYPGroveWagon);
+xsArraySetInt(arrBuilds,12,cUnitTypeypGroveBuilding);
+
+xsArraySetInt(arrBuilder,13,cUnitTypeypMarketWagon);
+xsArraySetInt(arrBuilds,13,cUnitTypeypTradeMarketAsian);
+
+xsArraySetInt(arrBuilder,14,cUnitTypeYPMonasteryWagon);
+xsArraySetInt(arrBuilds,14,cUnitTypeypMonastery);
+
+xsArraySetInt(arrBuilder,15,cUnitTypeYPRicePaddyWagon);
+xsArraySetInt(arrBuilds,15,cUnitTypeypRicePaddy);
+
+xsArraySetInt(arrBuilder,16,cUnitTypeYPSacredFieldWagon);
+xsArraySetInt(arrBuilds,16,cUnitTypeypSacredField);
+
+xsArraySetInt(arrBuilder,17,cUnitTypeypShrineWagon);
+xsArraySetInt(arrBuilds,17,cUnitTypeypShrineJapanese);
+
+xsArraySetInt(arrBuilder,18,cUnitTypeypTradingPostWagon);
+xsArraySetInt(arrBuilds,18,cUnitTypeTradingPost);
+
+xsArraySetInt(arrBuilder,19,cUnitTypeYPVillageWagon);
+xsArraySetInt(arrBuilds,19,cUnitTypeypVillage);
+
+xsArraySetInt(arrBuilder,20,cUnitTypeFarmTravois);
+xsArraySetInt(arrBuilds,20,cUnitTypeFarm);
+
+xsArraySetInt(arrBuilder,21,cUnitTypeWarHutTravois);
+xsArraySetInt(arrBuilds,21,cUnitTypeWarHut);
+
+xsArraySetInt(arrBuilder,22,cUnitTypeNoblesHutTravois);
+xsArraySetInt(arrBuilds,22,cUnitTypeNoblesHut);
+}
+
 rule wagonMonitor
 active
 group tcComplete
 minInterval 10
 {
-   int planID = -1;
-   if ((kbUnitCount(cMyID, cUnitTypeYPVillageWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypVillage) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeypVillage, 1, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeYPVillageWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeYPRicePaddyWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypVillage) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeypRicePaddy, 1, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeYPRicePaddyWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeYPGroveWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypGroveBuilding) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeypGroveBuilding, 1, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeYPGroveWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeypArsenalWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypArsenalAsian) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeypArsenalAsian, 1, 99, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeypArsenalWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeypBankWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypBankAsian) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeypBankAsian, 1, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeypBankWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeypChurchWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeypChurch) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeypChurch, 1, 99, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeypChurchWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeypBlockhouseWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeBlockhouse) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeBlockhouse, 1, 99, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeypBlockhouseWagon, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeFarmTravois, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeFarm) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeFarm, 1, 99, true, cEconomyEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeFarmTravois, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeWarHutTravois, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeWarHut) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeWarHut, 1, 99, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeWarHutTravois, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeNoblesHutTravois, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeNoblesHut) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeNoblesHut, 1, 99, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeNoblesHutTravois, 1, 1, 1);
-   }
-   if ((kbUnitCount(cMyID, cUnitTypeOutpostWagon, cUnitStateAlive) > 0) &&
-       (aiPlanGetIDByTypeAndVariableType(cPlanBuild, cBuildPlanBuildingTypeID, cUnitTypeNoblesHut) < 0))
-   {
-      planID = createSimpleBuildPlan(cUnitTypeOutpost, 1, 99, true, cMilitaryEscrowID, kbBaseGetMainID(cMyID), 0);
-      aiPlanAddUnitType(planID, cUnitTypeOutpostWagon, 1, 1, 1);
-   }
+	if (nBB==0) initWagon();
+	int planID = -1;
+	int i=0;
+	int tmpID=-1;
+	int tmpBuilder=-1;
+	int tmpBuilds=-1;
+	int builder=-1;
+	int debug=0;
+		
+	string tmp="";
+	for(i=0;<nBB){
+		tmpBuilder=xsArrayGetInt(arrBuilder,i);
+		if (kbUnitCount(cMyID, tmpBuilder , cUnitStateAlive) > 0){
+			tmpID=getUnit(tmpBuilder,cMyID,cUnitStateAlive);
+			if (aiPlanGetID("Wagon Build Plan "+tmpID) < 0){
+				tmpBuilds=xsArrayGetInt(arrBuilds,i);
+				
+				planID=aiPlanCreate("Wagon Build Plan "+tmpID,cPlanBuild);				
+				aiPlanSetVariableInt(planID, cBuildPlanBuildingTypeID, 0, tmpBuilds);
+				aiPlanSetVariableFloat(planID, cBuildPlanBuildingBufferSpace, 0, 4.0);
+				aiPlanSetDesiredPriority(planID, 99);
+				aiPlanSetEconomy(planID, true);
+				aiPlanSetMilitary(planID, false);
+				aiPlanSetEscrowID(planID, cEconomyEscrowID);
+				
+				aiPlanAddUnitType(planID,tmpBuilder,1,1,1);
+				aiPlanAddUnit(planID, tmpID);
+				
+				aiPlanSetBaseID(planID, kbBaseGetMainID(cMyID));
+				aiPlanSetActive(planID);
+				
+				debug=aiPlanGetNumberUnits(planID,tmpBuilder);
+				tmp=tmp+tmpBuilder+":"+kbGetProtoUnitName(tmpBuilder)+"->"+kbGetProtoUnitName(tmpBuilds)+debug+"|";
+			} 
+		}
+	}  
+	
+	if (i!=0) echoMessage(tmp);
+	
 }
 
 
